@@ -5,10 +5,12 @@ owm_source "lib/dispatch.sh"
 
 declare -g -A OWM_DAEMON_LAST_DPMS=()
 declare -g -A OWM_DAEMON_LAST_DISABLED=()
+declare -g -A OWM_DAEMON_LAST_RECOVER=()
 OWM_DAEMON_NEEDS_DISPATCH=0
 OWM_DAEMON_NEEDS_RELOAD=0
 OWM_DAEMON_LAST_DISPATCH=0
 OWM_DAEMON_DISPATCH_THROTTLE_MS=500
+OWM_DAEMON_LAST_SIGNATURE=""
 
 owm_daemon_snapshot_signature() {
 	local monitors_json="$1"
@@ -23,6 +25,28 @@ owm_daemon_now_ms() {
 	else
 		now="$(date +%s 2>/dev/null || printf '0')"
 		printf '%s\n' "$((now * 1000))"
+	fi
+}
+
+owm_daemon_managed_monitor() {
+	local name="$1"
+	[[ "$name" == "$OWM_PAIRED_PRIMARY" || "$name" == "$OWM_PAIRED_SECONDARY" ]]
+}
+
+owm_daemon_attempt_recover_monitor() {
+	local identifier="$1"
+	local reason="${2:-unknown}"
+	[[ -n "$identifier" ]] || return 1
+	local now_ms
+	now_ms="$(owm_daemon_now_ms)"
+	local last="${OWM_DAEMON_LAST_RECOVER[$identifier]-0}"
+	if [[ "$last" =~ ^[0-9]+$ && $((now_ms - last)) -lt 2000 ]]; then
+		return 0
+	fi
+	OWM_DAEMON_LAST_RECOVER["$identifier"]="$now_ms"
+	owm_info "attempting monitor recovery for '$identifier' (reason: $reason)"
+	if ! owm_hyprctl keyword monitor "$identifier,preferred,auto,1" >/dev/null 2>&1; then
+		owm_warn "monitor recovery via hyprctl keyword monitor for '$identifier' failed"
 	fi
 }
 
@@ -48,12 +72,20 @@ owm_daemon_guard_sync() {
 		fi
 		OWM_DAEMON_LAST_DPMS["$name"]="$dpms_str"
 		OWM_DAEMON_LAST_DISABLED["$name"]="$disabled_str"
+		if [[ "$dpms_str" == "false" || "$dpms_str" == "0" || "$disabled_str" == "true" ]]; then
+			if owm_daemon_managed_monitor "$name"; then
+				owm_daemon_attempt_recover_monitor "$name" "dpms"
+			fi
+		fi
 	done < <(printf '%s\n' "$monitors_json" | jq -r '.[] | [.name, (if has("dpmsStatus") then (.dpmsStatus|tostring) else "true" end), (if has("disabled") then (.disabled|tostring) else "false" end)] | @tsv')
 
 	for existing in "${!OWM_DAEMON_LAST_DPMS[@]}"; do
 		if [[ -z "${seen[$existing]:-}" ]]; then
 			needs_dispatch=1
 			needs_reload=1
+			if owm_daemon_managed_monitor "$existing"; then
+				owm_daemon_attempt_recover_monitor "$existing" "missing"
+			fi
 			unset "OWM_DAEMON_LAST_DPMS[$existing]"
 			unset "OWM_DAEMON_LAST_DISABLED[$existing]"
 		fi
@@ -119,6 +151,7 @@ owm_daemon_rebalance_state() {
 	done
 
 	local windows_moved=0
+	local -a dispatch_commands=()
 	while IFS=$'\t' read -r address workspace_id monitor_name; do
 		[[ -n "$address" && -n "$workspace_id" ]] || continue
 		if ! [[ "$workspace_id" =~ ^-?[0-9]+$ ]]; then
@@ -150,26 +183,197 @@ owm_daemon_rebalance_state() {
 			continue
 		fi
 
-		owm_hypr_dispatch focuswindow "address:$address"
-
 		if ((monitor_inactive == 1)); then
 			local target_monitor="$active_monitor"
 			if [[ -n "$primary_monitor" ]]; then
 				target_monitor="$primary_monitor"
 			fi
-			owm_hypr_dispatch movewindow "mon:$target_monitor"
+			dispatch_commands+=("$(owm_hypr_build_dispatch movewindow "mon:${target_monitor},address:$address")")
 		fi
 
 		if ((needs_workspace_change == 1)); then
-			owm_hypr_dispatch movetoworkspacesilent "$normalized_workspace"
+			dispatch_commands+=("$(owm_hypr_build_dispatch movetoworkspacesilent "${normalized_workspace},address:$address")")
 		fi
 
 		windows_moved=1
 	done < <(printf '%s\n' "$clients_json" | jq -r '.[] | [.address, (if .workspace != null and .workspace.id != null then .workspace.id else (.workspaceID // empty) end), (.monitor // "")] | @tsv')
 
 	if ((windows_moved == 1)); then
+		if ((${#dispatch_commands[@]} > 0)); then
+			owm_hypr_dispatch_batch "${dispatch_commands[@]}"
+		fi
 		owm_waybar_refresh
 	fi
+}
+
+owm_daemon_socket_path() {
+	local signature="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+	if [[ -z "$signature" ]]; then
+		return 1
+	fi
+	local runtime="${XDG_RUNTIME_DIR:-/tmp}"
+	printf '%s/hypr/%s/.socket2.sock\n' "$runtime" "$signature"
+}
+
+owm_daemon_trigger_dispatch() {
+	local monitors_json="$1"
+	local reason="${2:-event}"
+	local now_ms
+	now_ms="$(owm_daemon_now_ms)"
+	if [[ "$OWM_DAEMON_LAST_DISPATCH" =~ ^[0-9]+$ ]]; then
+		local delta=$((now_ms - OWM_DAEMON_LAST_DISPATCH))
+		if ((delta < OWM_DAEMON_DISPATCH_THROTTLE_MS)); then
+			owm_debug "skipping dispatch for $reason (${OWM_DAEMON_DISPATCH_THROTTLE_MS}ms throttle window)"
+			return 0
+		fi
+	fi
+
+	owm_dispatch_run 0
+	OWM_DAEMON_LAST_DISPATCH="$now_ms"
+
+	if [[ "${OWM_DAEMON_AUTO_CONFIG:-0}" == "1" ]]; then
+		owm_daemon_regenerate_config
+	fi
+	if [[ "${OWM_DAEMON_AUTO_MOVE:-1}" == "1" ]]; then
+		owm_daemon_rebalance_state "$monitors_json"
+	fi
+}
+
+owm_daemon_refresh_state() {
+	local reason="${1:-event}"
+	local monitors_json
+	if ! monitors_json="$(owm_hypr_get_json monitors)"; then
+		owm_warn "hyprctl monitors failed during $reason; retrying later"
+		return 1
+	fi
+
+	owm_daemon_guard_sync "$monitors_json"
+	local needs_dispatch="$OWM_DAEMON_NEEDS_DISPATCH"
+	local needs_reload="$OWM_DAEMON_NEEDS_RELOAD"
+
+	local signature
+	signature="$(owm_daemon_snapshot_signature "$monitors_json")"
+	if [[ -z "$OWM_DAEMON_LAST_SIGNATURE" || "$signature" != "$OWM_DAEMON_LAST_SIGNATURE" ]]; then
+		owm_debug "monitor topology change detected via $reason"
+		needs_dispatch=1
+		needs_reload=1
+	fi
+
+	if ((needs_reload == 1)); then
+		owm_daemon_reload_hypr
+	fi
+	if ((needs_dispatch == 1)); then
+		owm_daemon_trigger_dispatch "$monitors_json" "$reason"
+	fi
+
+	OWM_DAEMON_LAST_SIGNATURE="$signature"
+	return 0
+}
+
+owm_daemon_handle_monitor_event() {
+	local event="$1"
+	local payload="$2"
+
+	local monitor_id=""
+	local monitor_name=""
+	local monitor_desc=""
+
+	case "$event" in
+	monitoraddedv2 | monitorremovedv2)
+		if [[ -n "$payload" ]]; then
+			IFS=',' read -r monitor_id monitor_name monitor_desc <<<"$payload"
+			monitor_id="${monitor_id:-}"
+			monitor_name="${monitor_name:-}"
+			if [[ "$monitor_desc" == "$monitor_name" ]]; then
+				monitor_desc=""
+			fi
+		fi
+		;;
+	monitoradded | monitorremoved)
+		monitor_name="$payload"
+		;;
+	esac
+
+	local matched_role=""
+	if owm_paired_monitor_matches primary "$monitor_id" "$monitor_name" "$monitor_desc"; then
+		matched_role="primary"
+	elif owm_paired_monitor_matches secondary "$monitor_id" "$monitor_name" "$monitor_desc"; then
+		matched_role="secondary"
+	fi
+
+	local summary="id=${monitor_id:-<none>} name=${monitor_name:-<none>}"
+	if [[ -n "$monitor_desc" ]]; then
+		summary+=", desc=${monitor_desc}"
+	fi
+
+	if [[ -n "$matched_role" ]]; then
+		owm_info "monitor event [$event] matched $matched_role ($summary)"
+	else
+		owm_debug "monitor event [$event] ignored (unmanaged output) ($summary)"
+	fi
+
+	owm_daemon_refresh_state "event:$event:${matched_role:-unmanaged}"
+}
+
+owm_daemon_handle_event() {
+	local message="$1"
+	[[ -n "$message" ]] || return 0
+	local event="${message%%>>*}"
+	local payload=""
+	if [[ "$message" == *">>"* ]]; then
+		payload="${message#*>>}"
+	fi
+	case "$event" in
+	monitoradded | monitoraddedv2 | monitorremoved | monitorremovedv2)
+		owm_daemon_handle_monitor_event "$event" "$payload"
+		return
+		;;
+	workspace | workspacev2 | focusedmon | focusedmonv2 | configreloaded | createworkspace | destroyworkspace | moveworkspace | moveworkspacev2 | activespecial | activespecialv2 | activewindow | activewindowv2 | dpms)
+		owm_debug "event[$event] $payload"
+		owm_daemon_refresh_state "event:$event"
+		;;
+	*)
+		owm_debug "ignoring event[$event]"
+		;;
+	esac
+}
+
+owm_daemon_events_forever() {
+	local socket_path
+	socket_path="$(owm_daemon_socket_path)" || {
+		owm_warn "HYPRLAND_INSTANCE_SIGNATURE not set; cannot listen for events"
+		return 1
+	}
+	if [[ ! -S "$socket_path" ]]; then
+		owm_warn "Hyprland event socket not found at $socket_path"
+		return 1
+	fi
+	if ! command -v socat >/dev/null 2>&1; then
+		owm_warn "socat not available; event listener disabled"
+		return 1
+	fi
+
+	owm_info "listening for Hyprland events on $socket_path"
+
+	while true; do
+		coproc HYPR_EVENTS { socat -U UNIX-CONNECT:"$socket_path" -; }
+		if [[ -z "${HYPR_EVENTS_PID:-}" ]]; then
+			return 1
+		fi
+		while IFS= read -r line <&"${HYPR_EVENTS[0]}"; do
+			[[ -n "$line" ]] || continue
+			owm_daemon_handle_event "$line"
+		done
+		local read_status=$?
+		kill "$HYPR_EVENTS_PID" 2>/dev/null || true
+		wait "$HYPR_EVENTS_PID" 2>/dev/null || true
+		if ((read_status == 0)); then
+			owm_debug "event stream closed; reconnecting"
+		else
+			owm_warn "event stream interrupted (status $read_status); reconnecting in 1s"
+		fi
+		sleep 1
+	done
 }
 
 owm_daemon_cleanup() {
@@ -183,7 +387,6 @@ owm_daemon_cleanup() {
 }
 
 owm_daemon_run() {
-	local poll_interval="${1:-${OWM_POLL_INTERVAL:-0.2}}"
 	local pid_file="${OWM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/omarchy-workspace-manager}/daemon.pid"
 
 	owm_ensure_dir "$(dirname -- "$pid_file")"
@@ -204,81 +407,11 @@ owm_daemon_run() {
 	trap owm_daemon_cleanup INT TERM EXIT
 
 	owm_paired_load_config "${OWM_DAEMON_PRIMARY_OVERRIDE:-}" "${OWM_DAEMON_SECONDARY_OVERRIDE:-}" "${OWM_DAEMON_OFFSET_OVERRIDE:-}"
-	owm_dispatch_run 0
-	OWM_DAEMON_LAST_DISPATCH="$(owm_daemon_now_ms)"
+	OWM_DAEMON_LAST_DISPATCH=0
+	OWM_DAEMON_LAST_SIGNATURE=""
+	owm_daemon_refresh_state "startup"
 
-	local last_signature=""
-
-	while true; do
-		local monitors_json
-		if ! monitors_json="$(owm_hypr_get_json monitors)"; then
-			owm_warn "hyprctl monitors failed; retrying after pause"
-			sleep "$poll_interval"
-			continue
-		fi
-
-		owm_daemon_guard_sync "$monitors_json"
-		local needs_dispatch="$OWM_DAEMON_NEEDS_DISPATCH"
-		local needs_reload="$OWM_DAEMON_NEEDS_RELOAD"
-
-		local signature
-		signature="$(owm_daemon_snapshot_signature "$monitors_json")"
-		owm_debug "monitor signature $signature"
-
-		if [[ -z "$last_signature" || "$signature" != "$last_signature" ]]; then
-			owm_debug "detected monitor topology change; redispatching"
-			needs_dispatch=1
-			needs_reload=1
-		fi
-
-		if ((needs_reload == 1)); then
-			owm_daemon_reload_hypr
-		fi
-
-		if ((needs_dispatch == 1)); then
-			local now_ms throttled
-			now_ms="$(owm_daemon_now_ms)"
-			throttled=0
-			if [[ "$OWM_DAEMON_LAST_DISPATCH" =~ ^[0-9]+$ ]]; then
-				local delta=$((now_ms - OWM_DAEMON_LAST_DISPATCH))
-				if ((delta < OWM_DAEMON_DISPATCH_THROTTLE_MS)); then
-					throttled=1
-					owm_debug "Skipping dispatch (${OWM_DAEMON_DISPATCH_THROTTLE_MS}ms throttle window)"
-				fi
-			fi
-			if ((throttled == 0)); then
-				owm_dispatch_run 0
-				OWM_DAEMON_LAST_DISPATCH="$now_ms"
-				if [[ "${OWM_DAEMON_AUTO_CONFIG:-0}" == "1" ]]; then
-					owm_daemon_regenerate_config
-				fi
-				if [[ "${OWM_DAEMON_AUTO_MOVE:-1}" == "1" ]]; then
-					owm_daemon_rebalance_state "$monitors_json"
-				fi
-				last_signature="$signature"
-			fi
-		fi
-
-		sleep "$poll_interval"
-	done
-}
-
-owm_daemon_regenerate_config() {
-	local base_dir="${OWM_CONFIG_DIR:-$OWM_ROOT/config}"
-	local binary="${OWM_BIN_DIR:-$OWM_ROOT/bin}/omarchy-workspace-manager"
-
-	if [[ ! -x "$binary" ]]; then
-		owm_warn "cannot regenerate config; missing $binary"
-		return
-	fi
-
-	if ! "$binary" setup install --base-dir "$base_dir" --yes >/dev/null 2>&1; then
-		owm_warn "config regeneration via setup install failed"
-	else
-		owm_debug "regenerated hypr config fragments after monitor change"
-	fi
-
-	if command -v hyprctl >/dev/null 2>&1; then
-		hyprctl reload >/dev/null 2>&1 || owm_warn "hyprctl reload failed after config regeneration"
+	if ! owm_daemon_events_forever; then
+		owm_die "Hyprland event stream unavailable; ensure socat is installed and Hyprland is running"
 	fi
 }

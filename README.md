@@ -2,7 +2,7 @@
   <h1>Omarchy Workspace Manager</h1>
   <p>Hyprland’s companion for perfectly paired dual-monitor workspaces.</p>
   <p>
-    <a href="./version"><img src="https://img.shields.io/badge/version-1.0.1-6C5CE7?style=flat-square" alt="Version 1.0.1"></a>
+    <a href="./version"><img src="https://img.shields.io/badge/version-1.1.0-6C5CE7?style=flat-square" alt="Version 1.1.0"></a>
     <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/built_for-Omarchy_%2B_Hyprland-00B894?style=flat-square" alt="Omarchy + Hyprland Ready"></a>
     <a href="#installation"><img src="https://img.shields.io/badge/install-curl_|_bash-0984E3?style=flat-square" alt="Install Script"></a>
     <a href="#uninstall"><img src="https://img.shields.io/badge/uninstall-one_command-FF7675?style=flat-square" alt="One-Command Uninstall"></a>

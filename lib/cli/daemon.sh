@@ -8,7 +8,6 @@ owm_cli_daemon_usage() {
 Usage: omarchy-workspace-manager daemon [OPTIONS]
 
 Options:
-      --poll-interval <SECONDS>  Polling interval for monitor checks (default 0.2s)
       --primary <NAME>           Override primary monitor identifier
       --secondary <NAME>         Override secondary monitor identifier
       --offset <NUMBER>          Override paired workspace offset (default 10)
@@ -17,21 +16,12 @@ USAGE
 }
 
 owm_cli_daemon() {
-	local poll_interval=""
 	local primary_override=""
 	local secondary_override=""
 	local offset_override=""
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-		--poll-interval)
-			poll_interval="$2"
-			shift 2
-			;;
-		--poll-interval=*)
-			poll_interval="${1#*=}"
-			shift
-			;;
 		--primary)
 			primary_override="$2"
 			shift 2
@@ -87,9 +77,5 @@ owm_cli_daemon() {
 		export OWM_DAEMON_OFFSET_OVERRIDE="$offset_override"
 	fi
 
-	if [[ -n "$poll_interval" ]]; then
-		owm_daemon_run "$poll_interval"
-	else
-		owm_daemon_run
-	fi
+	owm_daemon_run
 }

@@ -43,17 +43,20 @@ BIN_DIR="${OWM_UNINSTALL_BIN_DIR:-$HOME/.local/bin}"
 CONFIG_DIR="${OWM_UNINSTALL_CONFIG_DIR:-$HOME/.config/omarchy-workspace-manager}"
 HYPR_BINDINGS="${OWM_UNINSTALL_HYPR_BINDINGS:-$HOME/.config/hypr/bindings.conf}"
 HYPR_AUTOSTART="${OWM_UNINSTALL_HYPR_AUTOSTART:-$HOME/.config/hypr/autostart.conf}"
-HYPR_WORKSPACE_CFG="${OWM_UNINSTALL_HYPR_WORKSPACE_CONF:-$HOME/.config/hypr/workspace_manager.conf}"
+HYPR_WORKSPACE_RULES_FILE="${OWM_UNINSTALL_HYPR_WORKSPACE_RULES:-${OWM_UNINSTALL_HYPR_WORKSPACE_CONF:-$HOME/.config/hypr/workspace-rules.conf}}"
 HYPR_MAIN="${OWM_UNINSTALL_HYPR_MAIN:-$HOME/.config/hypr/hyprland.conf}"
+RUNTIME_DIR="${OWM_UNINSTALL_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/omarchy-workspace-manager}"
+WORKSPACE_RULES_PATH="${OWM_UNINSTALL_WORKSPACE_RULES_PATH:-$CONFIG_DIR/workspace-rules.conf}"
+STATE_DIR="${OWM_UNINSTALL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-workspace-manager}"
+LOG_DIR="${OWM_UNINSTALL_LOG_DIR:-$STATE_DIR/logs}"
+LOG_FILE="${OWM_UNINSTALL_LOG_FILE:-$LOG_DIR/hyprctl.log}"
 
 list_known_binaries() {
 	local path real
-	if [[ -e "$BIN_DIR/omarchy-workspace-manager" ]]; then
-		real="$(resolve_path "$BIN_DIR/omarchy-workspace-manager")"
-		printf '%s\n' "$real"
-		if [[ "$real" != "$BIN_DIR/omarchy-workspace-manager" ]]; then
-			printf '%s\n' "$BIN_DIR/omarchy-workspace-manager"
-		fi
+	real="$(resolve_path "$BIN_DIR/omarchy-workspace-manager")"
+	printf '%s\n' "$real"
+	if [[ "$real" != "$BIN_DIR/omarchy-workspace-manager" ]]; then
+		printf '%s\n' "$BIN_DIR/omarchy-workspace-manager"
 	fi
 	if [[ -d "$INSTALL_DEST" ]]; then
 		while IFS= read -r -d '' path; do
@@ -78,15 +81,19 @@ any_artifacts_present() {
 	[[ -e "$BIN_DIR/omarchy-workspace-manager" ]] && return 0
 	[[ -d "$INSTALL_DEST" ]] && return 0
 	[[ -d "$CONFIG_DIR" ]] && return 0
+	[[ -f "$WORKSPACE_RULES_PATH" ]] && return 0
 	if [[ -f "$HYPR_BINDINGS" ]] && grep -q '# BEGIN OMARCHY_WORKSPACE_MANAGER' "$HYPR_BINDINGS"; then
 		return 0
 	fi
 	if [[ -f "$HYPR_AUTOSTART" ]] && grep -q '# BEGIN OMARCHY_WORKSPACE_MANAGER' "$HYPR_AUTOSTART"; then
 		return 0
 	fi
-	[[ -f "$HYPR_WORKSPACE_CFG" ]] && return 0
+	if [[ -f "$HYPR_WORKSPACE_RULES_FILE" ]] && grep -q '# BEGIN OMARCHY_WORKSPACE_MANAGER' "$HYPR_WORKSPACE_RULES_FILE"; then
+		return 0
+	fi
 	grep -q "\$CONFIG_DIR/bindings.conf" "$HYPR_MAIN" 2>/dev/null && return 0
 	grep -q "\$CONFIG_DIR/autostart.conf" "$HYPR_MAIN" 2>/dev/null && return 0
+	grep -q "\$CONFIG_DIR/workspace-rules.conf" "$HYPR_MAIN" 2>/dev/null && return 0
 	return 1
 }
 
@@ -101,15 +108,11 @@ remove_main_sources() {
 	if [[ -f "$HYPR_MAIN" ]]; then
 		sed -i "\|source = $CONFIG_DIR/bindings.conf|d" "$HYPR_MAIN" 2>/dev/null || true
 		sed -i "\|source = $CONFIG_DIR/autostart.conf|d" "$HYPR_MAIN" 2>/dev/null || true
+		sed -i "\|source = $CONFIG_DIR/workspace-rules.conf|d" "$HYPR_MAIN" 2>/dev/null || true
 	fi
 }
 
 stop_processes() {
-	if ! command -v pgrep >/dev/null 2>&1; then
-		warn "pgrep not available; skipping process termination"
-		return
-	fi
-
 	local target_paths=()
 	while IFS= read -r path; do
 		[[ -n "$path" ]] && target_paths+=("$path")
@@ -205,6 +208,29 @@ stop_processes() {
 	fi
 }
 
+remove_runtime_state() {
+	local pid_file="$RUNTIME_DIR/daemon.pid"
+	if [[ -f "$pid_file" ]]; then
+		local pid
+		pid="$(<"$pid_file")"
+		if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+			log "stopping omarchy-workspace-manager daemon $pid (runtime pid file)"
+			if ! kill "$pid" >/dev/null 2>&1; then
+				warn "failed to stop daemon process $pid"
+			else
+				sleep 0.2
+				if kill -0 "$pid" 2>/dev/null; then
+					kill -9 "$pid" >/dev/null 2>&1 || warn "failed to force kill daemon process $pid"
+				fi
+			fi
+		fi
+		rm -f "$pid_file" || warn "unable to remove runtime pid file $pid_file"
+	fi
+	if [[ -d "$RUNTIME_DIR" ]]; then
+		rmdir "$RUNTIME_DIR" 2>/dev/null || true
+	fi
+}
+
 remove_wrapper() {
 	local wrapper="$BIN_DIR/omarchy-workspace-manager"
 	if [[ -e "$wrapper" ]]; then
@@ -224,12 +250,33 @@ remove_config_dir() {
 	fi
 }
 
+remove_workspace_rules() {
+	if [[ -f "$WORKSPACE_RULES_PATH" ]]; then
+		rm -f "$WORKSPACE_RULES_PATH" || warn "unable to remove $WORKSPACE_RULES_PATH"
+	fi
+}
+
+remove_state_directories() {
+	if [[ -f "$LOG_FILE" ]]; then
+		rm -f "$LOG_FILE" || warn "unable to remove $LOG_FILE"
+	fi
+	if [[ -d "$LOG_DIR" ]]; then
+		rmdir "$LOG_DIR" 2>/dev/null || true
+	fi
+	if [[ -d "$STATE_DIR" ]]; then
+		rmdir "$STATE_DIR" 2>/dev/null || true
+	fi
+}
+
 remove_hypr_configs() {
 	strip_block "$HYPR_BINDINGS"
 	strip_block "$HYPR_AUTOSTART"
+	strip_block "$HYPR_WORKSPACE_RULES_FILE"
 	remove_main_sources
-	if [[ -f "$HYPR_WORKSPACE_CFG" ]]; then
-		rm -f "$HYPR_WORKSPACE_CFG"
+	if [[ -f "$HYPR_WORKSPACE_RULES_FILE" ]]; then
+		if [[ ! -s "$HYPR_WORKSPACE_RULES_FILE" ]] || ! grep -q '[^[:space:]]' "$HYPR_WORKSPACE_RULES_FILE"; then
+			rm -f "$HYPR_WORKSPACE_RULES_FILE" || warn "unable to remove empty $HYPR_WORKSPACE_RULES_FILE"
+		fi
 	fi
 }
 
@@ -255,10 +302,12 @@ print_summary() {
 	printf 'Removed:\n'
 	printf 'Bindings       : %s/bindings.conf\n' "$CONFIG_DIR"
 	printf 'Autostart      : %s/autostart.conf\n' "$CONFIG_DIR"
+	printf 'Workspace rules: %s\n' "$WORKSPACE_RULES_PATH"
 	printf 'Binary symlink : %s/omarchy-workspace-manager\n' "$BIN_DIR"
 	printf 'Install root   : %s\n' "$INSTALL_DEST"
 	printf 'Current build  : %s/current\n' "$INSTALL_DEST"
 	printf 'Config base    : %s\n' "$CONFIG_DIR"
+	printf 'Logs           : %s\n' "$LOG_FILE"
 	printf '\n'
 }
 
@@ -275,6 +324,7 @@ self_remove() {
 
 log "starting uninstall"
 stop_processes
+remove_runtime_state
 
 if ! any_artifacts_present; then
 	printf "No Omarchy Workspace Manager files found.\n"
@@ -284,7 +334,9 @@ fi
 remove_wrapper
 remove_install_tree
 remove_config_dir
+remove_workspace_rules
 remove_hypr_configs
+remove_state_directories
 reload_hypr
 print_summary
 self_remove

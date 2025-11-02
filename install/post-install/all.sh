@@ -36,7 +36,7 @@ owm_install_restart_daemon() {
 		fi
 	fi
 
-	"$binary" daemon --poll-interval "${OWM_INSTALL_DAEMON_POLL_INTERVAL:-0.5}" >/dev/null 2>&1 &
+	"$binary" daemon >/dev/null 2>&1 &
 	local new_pid=$!
 	if ((stopped_count > 0)); then
 		owm_install_info "daemon relaunched (pid $new_pid)"
@@ -46,15 +46,22 @@ owm_install_restart_daemon() {
 }
 
 owm_install_summary() {
+	local workspace_rules="$OWM_INSTALL_CONFIG_DIR/workspace-rules.conf"
+	local state_dir="${OWM_INSTALL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-workspace-manager}"
+	local log_dir="${OWM_INSTALL_LOG_DIR:-$state_dir/logs}"
+	local log_file="${OWM_INSTALL_LOG_FILE:-$log_dir/hyprctl.log}"
+
 	cat <<SUMMARY
 
 Installation complete.
 
 Bindings       : $OWM_INSTALL_CONFIG_DIR/bindings.conf
 Autostart      : $OWM_INSTALL_CONFIG_DIR/autostart.conf
+Workspace rules: $workspace_rules
 Binary symlink : $OWM_INSTALL_BIN_DIR/omarchy-workspace-manager
 Install root   : $OWM_INSTALL_DEST
 Current build  : $OWM_INSTALL_DEST/current
 Config base    : $OWM_INSTALL_CONFIG_DIR
+Logs           : $log_file
 SUMMARY
 }

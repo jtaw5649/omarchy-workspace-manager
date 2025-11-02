@@ -1,8 +1,254 @@
 #!/usr/bin/env bash
+# shellcheck shell=bash
 # Paired workspace helpers powering the `paired` CLI.
 
 owm_source "lib/hypr.sh"
 owm_source "lib/waybar.sh"
+
+# shellcheck disable=SC2034 # exported for dispatch helpers
+declare -g -a OWM_PAIRED_PRIMARY_IDS=()
+# shellcheck disable=SC2034 # exported for dispatch helpers
+declare -g -a OWM_PAIRED_SECONDARY_IDS=()
+# shellcheck disable=SC2034 # exported for dispatch helpers
+declare -g -A OWM_PAIRED_MONITOR_TARGETS=()
+# shellcheck disable=SC2034 # exported for dispatch helpers
+declare -g OWM_PAIRED_PRIMARY_PRESENT=0
+# shellcheck disable=SC2034 # exported for dispatch helpers
+declare -g OWM_PAIRED_SECONDARY_PRESENT=0
+
+owm_paired_collect_identifiers() {
+	local name="$1"
+	local descriptor="$2"
+	local monitor_id="$3"
+	local dest_name="$4"
+	declare -n dest="$dest_name"
+	dest=()
+	local -A seen=()
+	if [[ -n "$name" && -z "${seen[$name]-}" ]]; then
+		dest+=("$name")
+		seen["$name"]=1
+	fi
+	if [[ -n "$monitor_id" ]]; then
+		local id_candidate="id:$monitor_id"
+		if [[ -z "${seen[$id_candidate]-}" ]]; then
+			dest+=("$id_candidate")
+			seen["$id_candidate"]=1
+		fi
+	fi
+	if [[ -n "$descriptor" ]]; then
+		local descriptor_candidate="desc:$descriptor"
+		if [[ -z "${seen[$descriptor_candidate]-}" ]]; then
+			dest+=("$descriptor_candidate")
+			seen["$descriptor_candidate"]=1
+		fi
+		if [[ -z "${seen[$descriptor]-}" ]]; then
+			dest+=("$descriptor")
+			seen["$descriptor"]=1
+		fi
+	fi
+}
+
+owm_paired_reset_monitor_targets() {
+	OWM_PAIRED_MONITOR_TARGETS=()
+	OWM_PAIRED_PRIMARY_PRESENT=0
+	OWM_PAIRED_SECONDARY_PRESENT=0
+	if [[ -n "${OWM_PAIRED_PRIMARY_IDS[0]:-}" ]]; then
+		OWM_PAIRED_MONITOR_TARGETS[primary]="${OWM_PAIRED_PRIMARY_IDS[0]}"
+	fi
+	if [[ -n "${OWM_PAIRED_SECONDARY_IDS[0]:-}" ]]; then
+		OWM_PAIRED_MONITOR_TARGETS[secondary]="${OWM_PAIRED_SECONDARY_IDS[0]}"
+	fi
+}
+
+owm_paired_update_monitor_targets() {
+	local monitors_json="$1"
+	if [[ -z "$monitors_json" || "$monitors_json" == "null" ]]; then
+		return 0
+	fi
+	local -A name_lookup=()
+	local -A desc_lookup=()
+	local -A id_lookup=()
+	while IFS=$'\t' read -r mon_id mon_name mon_desc; do
+		if [[ -n "$mon_id" && "$mon_id" != "null" ]]; then
+			id_lookup["id:$mon_id"]="$mon_name"
+		fi
+		if [[ -n "$mon_name" ]]; then
+			name_lookup["$mon_name"]=1
+		fi
+		if [[ -n "$mon_desc" ]]; then
+			desc_lookup["$mon_desc"]=1
+		fi
+	done < <(printf '%s\n' "$monitors_json" | jq -r '.[] | [((.id // "")|tostring), (.name // ""), (.description // "")] | @tsv')
+
+	OWM_PAIRED_PRIMARY_PRESENT=0
+	local candidate
+	for candidate in "${OWM_PAIRED_PRIMARY_IDS[@]}"; do
+		if [[ "$candidate" == desc:* ]]; then
+			local match="${candidate#desc:}"
+			if [[ -n "${desc_lookup[$match]-}" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[primary]="$candidate"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_PRIMARY_PRESENT=1
+				break
+			fi
+		elif [[ "$candidate" == id:* ]]; then
+			local resolved="${id_lookup[$candidate]-}"
+			if [[ -n "$resolved" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[primary]="$resolved"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_PRIMARY_PRESENT=1
+				break
+			fi
+		else
+			if [[ -n "${name_lookup[$candidate]-}" || -n "${desc_lookup[$candidate]-}" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[primary]="$candidate"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_PRIMARY_PRESENT=1
+				break
+			fi
+		fi
+	done
+
+	OWM_PAIRED_SECONDARY_PRESENT=0
+	for candidate in "${OWM_PAIRED_SECONDARY_IDS[@]}"; do
+		if [[ "$candidate" == desc:* ]]; then
+			local match="${candidate#desc:}"
+			if [[ -n "${desc_lookup[$match]-}" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[secondary]="$candidate"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_SECONDARY_PRESENT=1
+				break
+			fi
+		elif [[ "$candidate" == id:* ]]; then
+			local resolved="${id_lookup[$candidate]-}"
+			if [[ -n "$resolved" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[secondary]="$resolved"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_SECONDARY_PRESENT=1
+				break
+			fi
+		else
+			if [[ -n "${name_lookup[$candidate]-}" || -n "${desc_lookup[$candidate]-}" ]]; then
+				OWM_PAIRED_MONITOR_TARGETS[secondary]="$candidate"
+				# shellcheck disable=SC2034 # propagated to consumers
+				OWM_PAIRED_SECONDARY_PRESENT=1
+				break
+			fi
+		fi
+	done
+}
+
+owm_paired_monitor_target() {
+	local role="$1"
+	local target="${OWM_PAIRED_MONITOR_TARGETS[$role]:-}"
+	if [[ -n "$target" ]]; then
+		printf '%s\n' "$target"
+		return 0
+	fi
+	case "$role" in
+	primary)
+		if [[ -n "${OWM_PAIRED_PRIMARY_IDS[0]:-}" ]]; then
+			printf '%s\n' "${OWM_PAIRED_PRIMARY_IDS[0]}"
+		else
+			printf '%s\n' "$OWM_PAIRED_PRIMARY"
+		fi
+		;;
+	secondary)
+		if [[ -n "${OWM_PAIRED_SECONDARY_IDS[0]:-}" ]]; then
+			printf '%s\n' "${OWM_PAIRED_SECONDARY_IDS[0]}"
+		else
+			printf '%s\n' "$OWM_PAIRED_SECONDARY"
+		fi
+		;;
+	*)
+		printf '%s\n' "$role"
+		;;
+	esac
+}
+
+owm_paired_resolve_monitor() {
+	local monitor="$1"
+	if [[ "$monitor" == "$OWM_PAIRED_PRIMARY" ]]; then
+		owm_paired_monitor_target primary
+	elif [[ "$monitor" == "$OWM_PAIRED_SECONDARY" ]]; then
+		owm_paired_monitor_target secondary
+	else
+		printf '%s\n' "$monitor"
+	fi
+}
+
+owm_paired_describe_identifiers() {
+	local role="$1"
+	local -a identifiers=()
+	case "$role" in
+	primary)
+		identifiers=("${OWM_PAIRED_PRIMARY_IDS[@]}")
+		;;
+	secondary)
+		identifiers=("${OWM_PAIRED_SECONDARY_IDS[@]}")
+		;;
+	esac
+	if ((${#identifiers[@]} == 0)); then
+		printf 'none'
+	else
+		local IFS=', '
+		printf '%s' "${identifiers[*]}"
+	fi
+}
+
+owm_paired_monitor_matches() {
+	local role="$1"
+	local monitor_id="$2"
+	local monitor_name="$3"
+	local monitor_desc="$4"
+
+	local -a identifiers=()
+	case "$role" in
+	primary)
+		identifiers=("${OWM_PAIRED_PRIMARY_IDS[@]}")
+		;;
+	secondary)
+		identifiers=("${OWM_PAIRED_SECONDARY_IDS[@]}")
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	if ((${#identifiers[@]} == 0)); then
+		return 1
+	fi
+
+	local -a candidates=()
+	if [[ -n "$monitor_desc" ]]; then
+		candidates+=("desc:$monitor_desc" "$monitor_desc")
+	fi
+	if [[ -n "$monitor_name" ]]; then
+		candidates+=("$monitor_name")
+	fi
+	if [[ -n "$monitor_id" ]]; then
+		candidates+=("id:$monitor_id")
+	fi
+
+	local candidate ident
+	for candidate in "${candidates[@]}"; do
+		for ident in "${identifiers[@]}"; do
+			if [[ -n "$ident" && "$candidate" == "$ident" ]]; then
+				return 0
+			fi
+		done
+	done
+	return 1
+}
+
+owm_paired_prime_monitor_targets() {
+	local monitors_json
+	if monitors_json="$(owm_hypr_get_json monitors 2>/dev/null)"; then
+		if [[ -n "$monitors_json" && "$monitors_json" != "null" ]]; then
+			owm_paired_update_monitor_targets "$monitors_json"
+		fi
+	fi
+}
 
 owm_paired_load_config() {
 	local primary_override="${1:-}"
@@ -13,12 +259,14 @@ owm_paired_load_config() {
 		owm_die "missing paired configuration at $OWM_CONFIG_PATH"
 	fi
 
-	local primary secondary offset primary_desc secondary_desc
+	local primary secondary offset primary_desc secondary_desc primary_id secondary_id
 	primary="$(jq -r '.primary_monitor // empty' "$OWM_CONFIG_PATH")"
 	secondary="$(jq -r '.secondary_monitor // empty' "$OWM_CONFIG_PATH")"
 	offset="$(jq -r '.paired_offset // empty' "$OWM_CONFIG_PATH")"
 	primary_desc="$(jq -r '.primary_descriptor // empty' "$OWM_CONFIG_PATH")"
 	secondary_desc="$(jq -r '.secondary_descriptor // empty' "$OWM_CONFIG_PATH")"
+	primary_id="$(jq -r '.primary_id // empty' "$OWM_CONFIG_PATH")"
+	secondary_id="$(jq -r '.secondary_id // empty' "$OWM_CONFIG_PATH")"
 
 	if [[ -n "$primary_override" ]]; then
 		primary="$primary_override"
@@ -77,10 +325,17 @@ owm_paired_load_config() {
 	export OWM_PAIRED_OFFSET="$offset"
 	export OWM_PAIRED_PRIMARY_DESC="$primary_desc"
 	export OWM_PAIRED_SECONDARY_DESC="$secondary_desc"
-	# shellcheck disable=SC2034 # referenced via nameref in dispatch helpers
+	export OWM_PAIRED_PRIMARY_ID="$primary_id"
+	export OWM_PAIRED_SECONDARY_ID="$secondary_id"
+	# shellcheck disable=SC2034 # consumed via nameref in CLI wrappers
 	declare -g -a OWM_PAIRED_PRIMARY_GROUP=("${primary_group[@]}")
-	# shellcheck disable=SC2034 # referenced via nameref in dispatch helpers
+	# shellcheck disable=SC2034 # consumed via nameref in CLI wrappers
 	declare -g -a OWM_PAIRED_SECONDARY_GROUP=("${secondary_group[@]}")
+
+	owm_paired_collect_identifiers "$primary" "$primary_desc" "$primary_id" OWM_PAIRED_PRIMARY_IDS
+	owm_paired_collect_identifiers "$secondary" "$secondary_desc" "$secondary_id" OWM_PAIRED_SECONDARY_IDS
+	owm_paired_reset_monitor_targets
+	owm_paired_prime_monitor_targets
 }
 
 owm_paired_normalize_workspace() {
@@ -108,19 +363,34 @@ owm_paired_execute_switch() {
 	local secondary="$OWM_PAIRED_SECONDARY"
 	local primary_ws="$OWM_PAIRED_PRIMARY_WORKSPACE"
 	local secondary_ws="$OWM_PAIRED_SECONDARY_WORKSPACE"
+	local primary_target
+	local secondary_target
 	local initial_monitor=""
+	local -a commands=()
 
+	primary_target="$(owm_paired_monitor_target primary)"
+	secondary_target="$(owm_paired_monitor_target secondary)"
 	initial_monitor="$(owm_hypr_focused_monitor)" || initial_monitor=""
 
 	if [[ "$secondary" != "$primary" ]]; then
-		owm_hypr_dispatch focusmonitor "$secondary"
-		owm_hypr_dispatch workspace "$secondary_ws"
+		commands+=("$(owm_hypr_build_dispatch focusmonitor "$secondary_target")")
+		commands+=("$(owm_hypr_build_dispatch workspace "$secondary_ws")")
+		commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$secondary_ws" "$secondary_target")")
 	fi
-	owm_hypr_dispatch focusmonitor "$primary"
-	owm_hypr_dispatch workspace "$primary_ws"
+	commands+=("$(owm_hypr_build_dispatch focusmonitor "$primary_target")")
+	commands+=("$(owm_hypr_build_dispatch workspace "$primary_ws")")
+	commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$primary_ws" "$primary_target")")
 
-	if [[ -n "$initial_monitor" && "$initial_monitor" != "$primary" ]]; then
-		owm_hypr_dispatch focusmonitor "$initial_monitor"
+	local initial_target=""
+	if [[ -n "$initial_monitor" ]]; then
+		initial_target="$(owm_paired_resolve_monitor "$initial_monitor")"
+	fi
+	if [[ -n "$initial_target" && "$initial_target" != "$primary_target" ]]; then
+		commands+=("$(owm_hypr_build_dispatch focusmonitor "$initial_target")")
+	fi
+
+	if ((${#commands[@]} > 0)); then
+		owm_hypr_dispatch_batch "${commands[@]}"
 	fi
 }
 
@@ -219,21 +489,20 @@ owm_paired_move_window() {
 		target_workspace=$((normalized + offset))
 	fi
 
-	owm_hypr_dispatch movetoworkspacesilent "$target_workspace"
-
-	local focus_monitor="$OWM_PAIRED_PRIMARY"
+	local focus_monitor_target
 	if ((use_secondary == 1)); then
-		focus_monitor="$OWM_PAIRED_SECONDARY"
-	fi
-
-	owm_hypr_dispatch focusmonitor "$focus_monitor"
-	owm_hypr_dispatch workspace "$target_workspace"
-
-	if ((use_secondary == 1)); then
-		owm_paired_plan_switch "$normalized"
+		focus_monitor_target="$(owm_paired_monitor_target secondary)"
 	else
-		owm_paired_plan_switch "$normalized"
+		focus_monitor_target="$(owm_paired_monitor_target primary)"
 	fi
+
+	local -a move_commands=()
+	move_commands+=("$(owm_hypr_build_dispatch movetoworkspacesilent "$target_workspace")")
+	move_commands+=("$(owm_hypr_build_dispatch focusmonitor "$focus_monitor_target")")
+	move_commands+=("$(owm_hypr_build_dispatch workspace "$target_workspace")")
+	owm_hypr_dispatch_batch "${move_commands[@]}"
+
+	owm_paired_plan_switch "$normalized"
 	local original_primary_ws="$OWM_PAIRED_PRIMARY_WORKSPACE"
 	local original_secondary_ws="$OWM_PAIRED_SECONDARY_WORKSPACE"
 	owm_paired_execute_switch

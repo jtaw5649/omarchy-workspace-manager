@@ -6,7 +6,7 @@ owm_checkpoints_default_expected() {
 }
 
 owm_checkpoints_default_actual() {
-	printf '%s/.config/hypr/workspace_manager.conf' "$HOME"
+	printf '%s/.config/omarchy-workspace-manager/paired.json' "$HOME"
 }
 
 owm_checkpoints_build_diff() {
@@ -75,7 +75,14 @@ owm_checkpoints_diff() {
 	diff="$(owm_checkpoints_build_diff "$expected_path" "$actual_path")"
 
 	if [[ "$json_output" == "1" ]]; then
-		printf '%s\n' "$diff"
+		local status
+		status="$(owm_checkpoints_has_diff "$diff")"
+		if [[ "$status" == "true" ]]; then
+			status="drift"
+		else
+			status="in_sync"
+		fi
+		printf '%s\n' "$diff" | jq --arg status "$status" '. + {status: $status}'
 		return 0
 	fi
 

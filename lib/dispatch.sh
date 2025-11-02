@@ -10,33 +10,31 @@ owm_dispatch_verify_monitors() {
 		return 0
 	fi
 
-	local primary_matches
-	local secondary_matches
-	primary_matches="$(printf '%s\n' "$json" | jq --arg name "$OWM_PAIRED_PRIMARY" --arg desc "$OWM_PAIRED_PRIMARY_DESC" '
-    map(select(.name == $name or ($desc != "" and (.description // "") == $desc))) | length
-  ')"
-	secondary_matches="$(printf '%s\n' "$json" | jq --arg name "$OWM_PAIRED_SECONDARY" --arg desc "$OWM_PAIRED_SECONDARY_DESC" '
-    map(select(.name == $name or ($desc != "" and (.description // "") == $desc))) | length
-  ')"
+	owm_paired_update_monitor_targets "$json"
 
-	if ! [[ "$primary_matches" =~ ^[0-9]+$ ]]; then
-		owm_warn "could not verify primary monitor presence"
-	elif ((primary_matches == 0)); then
-		owm_warn "no monitor matches primary identifier '$OWM_PAIRED_PRIMARY'"
+	if ((OWM_PAIRED_PRIMARY_PRESENT == 0)); then
+		owm_warn "no monitor matches primary identifiers ($(owm_paired_describe_identifiers primary))"
+	fi
+	if ((OWM_PAIRED_SECONDARY_PRESENT == 0)); then
+		owm_warn "no monitor matches secondary identifiers ($(owm_paired_describe_identifiers secondary))"
 	fi
 
-	if ! [[ "$secondary_matches" =~ ^[0-9]+$ ]]; then
-		owm_warn "could not verify secondary monitor presence"
-	elif ((secondary_matches == 0)); then
-		owm_warn "no monitor matches secondary identifier '$OWM_PAIRED_SECONDARY'"
-	fi
+	local primary_target
+	local secondary_target
+	primary_target="$(owm_paired_monitor_target primary)"
+	secondary_target="$(owm_paired_monitor_target secondary)"
+	owm_debug "monitor targets resolved to primary='$primary_target' secondary='$secondary_target'"
 }
 
 owm_dispatch_apply_group() {
-	local group_ref_name="$1"
-	local monitor="$2"
-	local dry_run="$3"
-	local -n group_ref="$group_ref_name"
+	local monitor="$1"
+	shift
+	local dry_run="$1"
+	shift
+	local monitor_target
+	monitor_target="$(owm_paired_resolve_monitor "$monitor")"
+	local -a group_ref=("$@")
+	local -a batch_commands=()
 
 	local workspace
 	for workspace in "${group_ref[@]}"; do
@@ -49,11 +47,14 @@ owm_dispatch_apply_group() {
 			printf '[dry-run] move workspace %s to monitor %s\n' "$workspace" "$monitor"
 			printf '[dry-run] focus monitor %s; workspace %s\n' "$monitor" "$workspace"
 		else
-			owm_hypr_dispatch moveworkspacetomonitor "$workspace" "$monitor"
-			owm_hypr_dispatch focusmonitor "$monitor"
-			owm_hypr_dispatch workspace "$workspace"
+			batch_commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$workspace" "$monitor_target")")
+			batch_commands+=("$(owm_hypr_build_dispatch focusmonitor "$monitor_target")")
+			batch_commands+=("$(owm_hypr_build_dispatch workspace "$workspace")")
 		fi
 	done
+	if [[ "$dry_run" != "1" && ${#batch_commands[@]} -gt 0 ]]; then
+		owm_hypr_dispatch_batch "${batch_commands[@]}"
+	fi
 }
 
 owm_dispatch_run() {
@@ -66,9 +67,9 @@ owm_dispatch_run() {
 
 	owm_dispatch_verify_monitors || true
 
-	owm_dispatch_apply_group OWM_PAIRED_PRIMARY_GROUP "$OWM_PAIRED_PRIMARY" "$dry_run"
+	owm_dispatch_apply_group "$OWM_PAIRED_PRIMARY" "$dry_run" "${OWM_PAIRED_PRIMARY_GROUP[@]}"
 	if [[ "$OWM_PAIRED_SECONDARY" != "$OWM_PAIRED_PRIMARY" ]]; then
-		owm_dispatch_apply_group OWM_PAIRED_SECONDARY_GROUP "$OWM_PAIRED_SECONDARY" "$dry_run"
+		owm_dispatch_apply_group "$OWM_PAIRED_SECONDARY" "$dry_run" "${OWM_PAIRED_SECONDARY_GROUP[@]}"
 	else
 		owm_debug "Primary and secondary monitors match; skipping duplicate assignment"
 	fi

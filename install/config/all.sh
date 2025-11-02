@@ -31,18 +31,34 @@ owm_install_update_main_source() {
 owm_install_update_hypr_sources() {
 	local bindings_source="$OWM_INSTALL_CONFIG_DIR/bindings.conf"
 	local autostart_source="$OWM_INSTALL_CONFIG_DIR/autostart.conf"
+	local workspace_source="$OWM_INSTALL_CONFIG_DIR/workspace-rules.conf"
 	local bindings_file="${OWM_INSTALL_HYPR_BINDINGS:-$HOME/.config/hypr/bindings.conf}"
 	local autostart_file="${OWM_INSTALL_HYPR_AUTOSTART:-$HOME/.config/hypr/autostart.conf}"
+	local workspace_file="${OWM_INSTALL_HYPR_WORKSPACE_RULES:-$HOME/.config/hypr/workspace-rules.conf}"
 
 	append_source_block "$bindings_file" "$bindings_source"
 	append_source_block "$autostart_file" "$autostart_source"
+	if [[ -f "$workspace_source" ]]; then
+		append_source_block "$workspace_file" "$workspace_source"
+	fi
 
 	local main_config="${OWM_INSTALL_HYPR_MAIN:-$HOME/.config/hypr/hyprland.conf}"
 	if [[ -f "$main_config" ]]; then
 		owm_install_update_main_source "$main_config" "source = $bindings_source"
 		owm_install_update_main_source "$main_config" "source = $autostart_source"
+		if [[ -f "$workspace_source" ]]; then
+			owm_install_update_main_source "$main_config" "source = $workspace_source"
+		fi
 	else
 		owm_install_warn "Hyprland main config $main_config missing; skipping source injection"
+	fi
+}
+
+owm_install_prepare_state_dir() {
+	local base="${OWM_INSTALL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-workspace-manager}"
+	local log_dir="${OWM_INSTALL_LOG_DIR:-$base/logs}"
+	if ! mkdir -p -- "$log_dir"; then
+		owm_install_warn "unable to create log directory $log_dir"
 	fi
 }
 
@@ -119,8 +135,10 @@ owm_install_configure_paired() {
 		def null_if_empty(s): if s == "" then null else s end;
 		{
 			primary_monitor: name_of(pick(0)),
+			primary_id: (pick(0).id // null),
 			primary_descriptor: null_if_empty(desc_of(pick(0))),
 			secondary_monitor: name_of(pick(1)),
+			secondary_id: (pick(1).id // null),
 			secondary_descriptor: null_if_empty(desc_of(pick(1))),
 			paired_offset: 10,
 			workspace_groups: {
@@ -147,11 +165,13 @@ owm_install_configure_paired() {
 	fi
 	mv "$tmp" "$config_path"
 
-	local primary_monitor primary_desc secondary_monitor secondary_desc
+	local primary_monitor primary_desc secondary_monitor secondary_desc primary_id secondary_id
 	primary_monitor="$(printf '%s\n' "$config_json" | jq -r '.primary_monitor')"
 	primary_desc="$(printf '%s\n' "$config_json" | jq -r '.primary_descriptor // empty')"
 	secondary_monitor="$(printf '%s\n' "$config_json" | jq -r '.secondary_monitor')"
 	secondary_desc="$(printf '%s\n' "$config_json" | jq -r '.secondary_descriptor // empty')"
+	primary_id="$(printf '%s\n' "$config_json" | jq -r '.primary_id // empty')"
+	secondary_id="$(printf '%s\n' "$config_json" | jq -r '.secondary_id // empty')"
 
 	if [[ -z "$primary_monitor" && -n "$primary_desc" ]]; then
 		primary_monitor="$primary_desc"
@@ -161,12 +181,30 @@ owm_install_configure_paired() {
 	fi
 
 	local primary_label="$primary_monitor"
+	if [[ -z "$primary_label" && -n "$primary_desc" ]]; then
+		primary_label="$primary_desc"
+	fi
+	if [[ -z "$primary_label" && -n "$primary_id" ]]; then
+		primary_label="id:$primary_id"
+	fi
 	if [[ -n "$primary_desc" && "$primary_desc" != "$primary_monitor" ]]; then
 		primary_label+=" ($primary_desc)"
 	fi
+	if [[ -n "$primary_id" ]]; then
+		primary_label+=" [id:$primary_id]"
+	fi
 	local secondary_label="$secondary_monitor"
+	if [[ -z "$secondary_label" && -n "$secondary_desc" ]]; then
+		secondary_label="$secondary_desc"
+	fi
+	if [[ -z "$secondary_label" && -n "$secondary_id" ]]; then
+		secondary_label="id:$secondary_id"
+	fi
 	if [[ -n "$secondary_desc" && "$secondary_desc" != "$secondary_monitor" ]]; then
 		secondary_label+=" ($secondary_desc)"
+	fi
+	if [[ -n "$secondary_id" ]]; then
+		secondary_label+=" [id:$secondary_id]"
 	fi
 
 	owm_install_info "configured paired workspaces for $primary_label ↔ $secondary_label"
@@ -175,6 +213,8 @@ owm_install_configure_paired() {
 owm_install_apply_config() {
 	local binary="$OWM_INSTALL_BIN_DIR/omarchy-workspace-manager"
 	local base_dir="$OWM_INSTALL_CONFIG_DIR"
+
+	owm_install_prepare_state_dir
 
 	if [[ -x "$binary" ]]; then
 		owm_install_info "generating Hyprland fragments via setup install"

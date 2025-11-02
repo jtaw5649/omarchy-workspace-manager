@@ -24,6 +24,8 @@ if [[ -z "${OWM_ROOT:-}" ]]; then
 fi
 
 export OWM_CONFIG_PATH="${OWM_CONFIG_PATH:-$OWM_ROOT/config/paired.json}"
+export OWM_STATE_DIR="${OWM_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-workspace-manager}"
+export OWM_LOG_DIR="${OWM_LOG_DIR:-$OWM_STATE_DIR/logs}"
 export OWM_RUNTIME_DIR="${OWM_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/omarchy-workspace-manager}"
 export OWM_BIN_DIR="${OWM_BIN_DIR:-$OWM_ROOT/bin}"
 export OWM_TEMPLATES_DIR="${OWM_TEMPLATES_DIR:-$OWM_ROOT/config}"
@@ -40,10 +42,30 @@ owm_ensure_dir() {
 	mkdir -p -- "$path"
 }
 
+owm_now_iso_8601() {
+	if date -u '+%Y-%m-%dT%H:%M:%SZ' >/dev/null 2>&1; then
+		date -u '+%Y-%m-%dT%H:%M:%SZ'
+	else
+		date '+%Y-%m-%dT%H:%M:%SZ'
+	fi
+}
+
+owm_json_escape() {
+	local raw="$1"
+	raw=${raw//\\/\\\\}
+	raw=${raw//\"/\\\"}
+	raw=${raw//$'\n'/\\n}
+	raw=${raw//$'\r'/\\r}
+	raw=${raw//$'\t'/\\t}
+	printf '%s' "$raw"
+}
+
 owm_log() {
 	local level="$1"
 	shift || true
 	local message="$*"
+	local timestamp
+	timestamp="$(owm_now_iso_8601)"
 	case "$level" in
 	DEBUG)
 		[[ "${OWM_DEBUG:-0}" == "1" ]] || return 0
@@ -57,7 +79,13 @@ owm_log() {
 		[[ "${OWM_DEBUG:-0}" == "1" ]] || return 0
 		;;
 	esac
-	printf '[%s] %s\n' "$level" "$message" >&2
+	if [[ "${OWM_LOG_JSON:-0}" == "1" || "${OWM_LOG_FORMAT:-}" == "json" ]]; then
+		local escaped
+		escaped="$(owm_json_escape "$message")"
+		printf '{"timestamp":"%s","level":"%s","message":"%s"}\n' "$timestamp" "$level" "$escaped" >&2
+	else
+		printf '[%s] [%s] %s\n' "$timestamp" "$level" "$message" >&2
+	fi
 }
 
 owm_info() {
@@ -101,4 +129,6 @@ owm_validate_runtime() {
 		owm_require_command "$cmd"
 	done
 	owm_ensure_dir "$OWM_RUNTIME_DIR"
+	owm_ensure_dir "$OWM_STATE_DIR"
+	owm_ensure_dir "$OWM_LOG_DIR"
 }

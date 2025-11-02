@@ -6,8 +6,7 @@ owm_waybar_refresh() {
 	local bin="${OWM_WAYBAR_NOTIFIER:-pkill}"
 
 	if ! command -v "$bin" >/dev/null 2>&1; then
-		owm_warn "skipping Waybar refresh; notifier '$bin' unavailable"
-		return 0
+		owm_die "Waybar notifier '$bin' not found; install procps-ng or set OWM_WAYBAR_NOTIFIER"
 	fi
 
 	"$bin" -"$signal" waybar >/dev/null 2>&1 || true

@@ -5,8 +5,13 @@ set -euo pipefail
 IFS=$'\n\t'
 
 root_dir="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck disable=SC1090
-source "$root_dir/lib/core.sh"
+core_lib="$root_dir/lib/core.sh"
+if [[ ! -f "$core_lib" ]]; then
+	echo "error: missing core library at $core_lib" >&2
+	exit 1
+fi
+# shellcheck source=/dev/null
+source "$core_lib"
 
 owm_usage() {
 	cat <<'USAGE'
