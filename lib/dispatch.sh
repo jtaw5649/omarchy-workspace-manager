@@ -34,7 +34,7 @@ owm_dispatch_apply_group() {
 	local monitor_target
 	monitor_target="$(owm_paired_resolve_monitor "$monitor")"
 	local -a group_ref=("$@")
-	local -a batch_commands=()
+	local -a move_commands=()
 
 	local workspace
 	for workspace in "${group_ref[@]}"; do
@@ -45,15 +45,12 @@ owm_dispatch_apply_group() {
 		fi
 		if [[ "$dry_run" == "1" ]]; then
 			printf '[dry-run] move workspace %s to monitor %s\n' "$workspace" "$monitor"
-			printf '[dry-run] focus monitor %s; workspace %s\n' "$monitor" "$workspace"
 		else
-			batch_commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$workspace" "$monitor_target")")
-			batch_commands+=("$(owm_hypr_build_dispatch focusmonitor "$monitor_target")")
-			batch_commands+=("$(owm_hypr_build_dispatch workspace "$workspace")")
+			move_commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$workspace" "$monitor_target")")
 		fi
 	done
-	if [[ "$dry_run" != "1" && ${#batch_commands[@]} -gt 0 ]]; then
-		owm_hypr_dispatch_batch "${batch_commands[@]}"
+	if [[ "$dry_run" != "1" && ${#move_commands[@]} -gt 0 ]]; then
+		owm_hypr_dispatch_batch "${move_commands[@]}"
 	fi
 }
 
@@ -67,10 +64,45 @@ owm_dispatch_run() {
 
 	owm_dispatch_verify_monitors || true
 
+	local initial_monitor=""
+	local initial_workspace=""
+	if [[ "$dry_run" != "1" ]]; then
+		initial_monitor="$(owm_hypr_focused_monitor 2>/dev/null || true)"
+		initial_workspace="$(owm_hypr_active_workspace_id 2>/dev/null || true)"
+	fi
+
 	owm_dispatch_apply_group "$OWM_PAIRED_PRIMARY" "$dry_run" "${OWM_PAIRED_PRIMARY_GROUP[@]}"
 	if [[ "$OWM_PAIRED_SECONDARY" != "$OWM_PAIRED_PRIMARY" ]]; then
 		owm_dispatch_apply_group "$OWM_PAIRED_SECONDARY" "$dry_run" "${OWM_PAIRED_SECONDARY_GROUP[@]}"
 	else
 		owm_debug "Primary and secondary monitors match; skipping duplicate assignment"
+	fi
+
+	if [[ "$dry_run" != "1" ]]; then
+		local -a restore_commands=()
+		local secondary_target=""
+		secondary_target="$(owm_paired_monitor_target secondary)"
+		if [[ -n "$secondary_target" && "$OWM_PAIRED_SECONDARY" != "$OWM_PAIRED_PRIMARY" ]]; then
+			local offset="$OWM_PAIRED_OFFSET"
+			if [[ "$offset" =~ ^[0-9]+$ && "$offset" -gt 0 && "$initial_workspace" =~ ^-?[0-9]+$ ]]; then
+				local normalized
+				normalized="$(owm_paired_normalize_workspace "$initial_workspace" "$offset")"
+				if [[ -n "$normalized" && "$normalized" =~ ^-?[0-9]+$ ]]; then
+					local secondary_workspace=$((normalized + offset))
+					restore_commands+=("$(owm_hypr_build_dispatch moveworkspacetomonitor "$secondary_workspace" "$secondary_target")")
+					restore_commands+=("$(owm_hypr_build_dispatch focusmonitor "$secondary_target")")
+					restore_commands+=("$(owm_hypr_build_dispatch workspace "$secondary_workspace")")
+				fi
+			fi
+		fi
+		if [[ -n "$initial_monitor" ]]; then
+			restore_commands+=("$(owm_hypr_build_dispatch focusmonitor "$initial_monitor")")
+		fi
+		if [[ -n "$initial_workspace" ]]; then
+			restore_commands+=("$(owm_hypr_build_dispatch workspace "$initial_workspace")")
+		fi
+		if ((${#restore_commands[@]} > 0)); then
+			owm_hypr_dispatch_batch "${restore_commands[@]}"
+		fi
 	fi
 }
