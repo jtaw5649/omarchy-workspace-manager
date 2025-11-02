@@ -17,6 +17,7 @@ Commands:
   daemon        Event loop supervisor for Hyprland
   dispatch      Force workspace assignments immediately
   setup         Installer utilities for Hyprland integration
+  uninstall     Remove Omarchy Workspace Manager files
   checkpoints   Inspect configuration checkpoints
   help          Show this help message
 USAGE
@@ -31,7 +32,7 @@ main() {
 	local command="$1"
 	shift || true
 
-	if [[ "$command" != "help" && "$command" != "-h" && "$command" != "--help" ]]; then
+	if [[ "$command" != "help" && "$command" != "-h" && "$command" != "--help" && "$command" != "uninstall" ]]; then
 		owm_validate_runtime
 	fi
 
@@ -54,6 +55,10 @@ main() {
 	setup)
 		owm_source "lib/cli/setup.sh"
 		owm_cli_setup "$@"
+		;;
+	uninstall)
+		owm_source "lib/cli/uninstall.sh"
+		owm_cli_uninstall "$@"
 		;;
 	checkpoints)
 		owm_source "lib/cli/checkpoints.sh"
