@@ -57,9 +57,8 @@ The installer automatically:
 1. **Run the installer.** Use the curl command above or `./install.sh` from the clone. The script stages binaries, seeds `paired.json`, generates Hyprland fragments, and integrates them into your config.
 2. **Confirm your `PATH`.** Ensure `${OWM_INSTALL_BIN_DIR:-$HOME/.local/bin}` is exported so `omarchy-workspace-manager` resolves in new shells.
 3. **Test the pairing.** Execute `omarchy-workspace-manager paired switch 3` and watch both monitors jump together. If the auto-detected layout needs tweaks, adjust `config/paired.json` and rerun `omarchy-workspace-manager setup install --yes`.
-
 > [!TIP]
-> Custom install destinations? Re-run the installer with updated `OWM_INSTALL_DEST`, `OWM_INSTALL_BIN_DIR`, or `OWM_INSTALL_CONFIG_DIR` values—existing fragments will be regenerated in the new locations.
+> To change the install destination: re-run the installer with updated `OWM_INSTALL_DEST`, `OWM_INSTALL_BIN_DIR`, or `OWM_INSTALL_CONFIG_DIR` values—existing fragments will be regenerated in the new locations.
 
 ## Default Keybinds
 
@@ -69,6 +68,7 @@ The installer renders Hyprland bindings that keep the number row mapped to paire
 | --- | --- |
 | `Super+1…0` | Focus paired workspace (1–10) on both monitors |
 | `Super+Shift+1…0` | Move the focused window to the paired workspace (1–10) |
+| `Super+Shift+Arrow keys` | Move the focused window in the pressed direction (supports crossing monitors) |
 | `Super+Scroll Up` | Cycle to the previous paired workspace |
 | `Super+Scroll Down` | Cycle to the next paired workspace |
 
