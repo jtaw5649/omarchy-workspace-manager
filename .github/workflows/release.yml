@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck shfmt
+
+      - name: Lint
+        run: scripts/lint.sh
+
+      - name: Set release version
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "$version" > version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifacts
+        run: scripts/build-release.sh
+
+      - name: Upload release tarball
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/omarchy-workspace-manager-${{ steps.meta.outputs.version }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
