@@ -1,11 +1,10 @@
 <div align="center">
   <h1>Omarchy Workspace Manager</h1>
-  <p>Hyprland’s companion for perfectly paired dual-monitor workspaces.</p>
+  <p>Hyprland's companion for perfectly paired dual-monitor workspaces.</p>
   <p>
-    <a href="./version"><img src="https://img.shields.io/badge/version-1.1.0-6C5CE7?style=flat-square" alt="Version 1.1.0"></a>
+    <a href="./PKGBUILD"><img src="https://img.shields.io/badge/version-1.2.0-6C5CE7?style=flat-square" alt="Version 1.2.0"></a>
     <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/built_for-Omarchy_%2B_Hyprland-00B894?style=flat-square" alt="Omarchy + Hyprland Ready"></a>
-    <a href="#installation"><img src="https://img.shields.io/badge/install-curl_|_bash-0984E3?style=flat-square" alt="Install Script"></a>
-    <a href="#uninstall"><img src="https://img.shields.io/badge/uninstall-one_command-FF7675?style=flat-square" alt="One-Command Uninstall"></a>
+    <a href="https://aur.archlinux.org/packages/omarchy-workspace-manager"><img src="https://img.shields.io/badge/install-AUR-0984E3?style=flat-square" alt="AUR Package"></a>
   </p>
 </div>
 
@@ -21,6 +20,7 @@
 - [Requirements](#requirements)
 - [Configuration](#configuration)
   - [Sample Pairing Config](#sample-pairing-config)
+- [Waybar Integration](#waybar-integration)
 - [Uninstall](#uninstall)
 - [Resources](#resources)
 
@@ -32,51 +32,38 @@
 
 ## Installation
 
-One-step install:
+Install from the AUR:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jtaw5649/omarchy-workspace-manager/master/install.sh | bash
+yay -S omarchy-workspace-manager
 ```
 
-Alternatively, clone and install:
-```bash
-git clone https://github.com/jtaw5649/omarchy-workspace-manager.git
-cd omarchy-workspace-manager
-./install.sh
-```
-
-Set `OWM_INSTALL_DEST`, `OWM_INSTALL_BIN_DIR`, or `OWM_INSTALL_CONFIG_DIR` beforehand if you want alternate locations.
-
-The installer automatically:
-- stages the toolkit under `${OWM_INSTALL_DEST:-$HOME/.local/share/omarchy-workspace-manager}` with a `current` symlink
-- drops `${OWM_INSTALL_BIN_DIR:-$HOME/.local/bin}/omarchy-workspace-manager` so the CLI is ready on your `PATH`
-- generates Hyprland fragments in `${OWM_INSTALL_CONFIG_DIR:-$HOME/.config/omarchy-workspace-manager}` and sources them from `hyprland.conf`
-- detects connected monitors via `hyprctl` to seed `config/paired.json`, reloads Hyprland, and restarts the daemon
+Config auto-generates on first use—monitors are detected via `hyprctl` and Hyprland fragments are sourced automatically.
 
 ## Quick Start
 
-1. **Run the installer.** Use the curl command above or `./install.sh` from the clone. The script stages binaries, seeds `paired.json`, generates Hyprland fragments, and integrates them into your config.
-2. **Confirm your `PATH`.** Ensure `${OWM_INSTALL_BIN_DIR:-$HOME/.local/bin}` is exported so `omarchy-workspace-manager` resolves in new shells.
-3. **Test the pairing.** Execute `omarchy-workspace-manager paired switch 3` and watch both monitors jump together. If the auto-detected layout needs tweaks, adjust `config/paired.json` and rerun `omarchy-workspace-manager setup install --yes`.
+1. **Install the package.** Use the AUR command above.
+2. **Run any command.** The first invocation auto-detects monitors, generates `paired.json`, creates Hyprland fragments, and sources them into your config.
+3. **Test the pairing.** Execute `omarchy-workspace-manager paired switch 3` and watch both monitors jump together. If the auto-detected layout needs tweaks, adjust `~/.config/omarchy-workspace-manager/paired.json` and rerun `omarchy-workspace-manager setup install`.
+
 > [!TIP]
-> To change the install destination: re-run the installer with updated `OWM_INSTALL_DEST`, `OWM_INSTALL_BIN_DIR`, or `OWM_INSTALL_CONFIG_DIR` values—existing fragments will be regenerated in the new locations.
+> The daemon starts automatically via the generated `autostart.conf`. It listens for monitor hotplug events to keep workspaces paired.
 
 ## Default Keybinds
 
-The installer renders Hyprland bindings that keep the number row mapped to paired workspaces (keycodes `code:10`–`code:19` map to `1`–`0`).
+The setup generates Hyprland bindings that keep the number row mapped to paired workspaces (keycodes `code:10`–`code:19` map to `1`–`0`).
 
 | Shortcut | Action |
 | --- | --- |
 | `Super+1…0` | Focus paired workspace (1–10) on both monitors |
 | `Super+Shift+1…0` | Move the focused window to the paired workspace (1–10) |
-| `Super+Shift+Arrow keys` | Move the focused window in the pressed direction (supports crossing monitors) |
 | `Super+Scroll Up` | Cycle to the previous paired workspace |
 | `Super+Scroll Down` | Cycle to the next paired workspace |
 
 ## Feature Overview
 
-| 🚦 Dry-Run Guardrails | 🧠 Auto Awareness | 🛠️ Configurable |
-| --- | --- | --- |
-| `dispatch --dry-run` previews fixes before applying them so layout changes stay auditable. | `daemon` listens to Hyprland events, rebalancing whenever monitors appear, sleep, or change DPMS state. | Customize pairings, offsets, and generated fragments with `setup install` and environment overrides. |
+| 🧠 Auto Awareness | 🛠️ Configurable |
+| --- | --- |
+| `daemon` listens to Hyprland events, rebalancing whenever monitors appear or are removed. | Customize pairings and offsets in `paired.json`, regenerate fragments with `setup install`. |
 
 ## How It Works
 
@@ -91,18 +78,16 @@ sequenceDiagram
   CLI->>Hyprctl: query monitors / workspaces
   Hyprctl-->>CLI: monitor state (JSON)
   CLI->>Hyprland: dispatch primary + secondary workspace change
-  CLI->>Hyprland: optional Waybar refresh hook
   Hyprland-->>User: Both displays settle on workspace pair 3/13
 ```
 
 ## Requirements
 - Hyprland
-- `curl` (or `wget`), `bash`, `jq`, `tar`, `pgrep`
+- `jq`, `socat`
 
 ## Configuration
-- **Monitors:** Edit `config/paired.json` to map the logical workspace pairing for your monitor names.
-- **Install destinations:** Export `OWM_INSTALL_DEST`, `OWM_INSTALL_BIN_DIR`, or `OWM_INSTALL_CONFIG_DIR` to change where the installer writes binaries and fragments.
-- **Keybinds:** Regenerate bindings with `omarchy-workspace-manager setup install --yes` after editing `config/hypr-bindings.conf` so Hyprland picks up the changes.
+- **Monitors:** Edit `~/.config/omarchy-workspace-manager/paired.json` to map the logical workspace pairing for your monitor names.
+- **Keybinds:** Regenerate bindings with `omarchy-workspace-manager setup install` after editing preferences.
 
 ### Sample Pairing Config
 
@@ -110,21 +95,39 @@ sequenceDiagram
 {
   "primary_monitor": "DP-1",
   "secondary_monitor": "DP-2",
-  "paired_offset": 10,
-  "workspace_groups": {
-    "primary": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    "secondary": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-  }
+  "paired_offset": 10
 }
 ```
+
 > [!NOTE]
-> The installer regenerates this file using `hyprctl monitors` output. Manual edits are preserved if you skip regeneration (`OWM_INSTALL_SKIP_HYPR_RELOAD=1`) or re-run `setup install` after applying changes.
+> On first run, this file is auto-generated using `hyprctl monitors` output. Monitors are sorted by x-position to determine primary (left) and secondary (right). The `paired_offset` determines how many workspaces per monitor (default 10), so workspace 3 on primary pairs with workspace 13 on secondary.
+
+## Waybar Integration
+
+Add a custom module to your Waybar config:
+
+```json
+"custom/workspaces": {
+    "exec": "omarchy-workspace-manager waybar",
+    "return-type": "json",
+    "on-scroll-up": "omarchy-workspace-manager paired cycle prev",
+    "on-scroll-down": "omarchy-workspace-manager paired cycle next"
+}
+```
+
+The module displays the normalized workspace number (e.g., workspace 14 shows as "4") and updates on workspace changes. Scroll up cycles to the previous paired workspace, scroll down to the next.
 
 ## Uninstall
 
-Option 1: Run `omarchy-workspace-manager uninstall` to remove the CLI wrapper, staged versions, and generated Hyprland fragments.
+```bash
+yay -R omarchy-workspace-manager
+```
 
-Option 2: Execute `scripts/uninstall.sh`, which honours the same environment overrides and performs the same cleanup.
+**Clean up config files:**
+
+1. Run `omarchy-workspace-manager setup uninstall` before removing the package (removes source lines from `hyprland.conf` and deletes generated fragments), or manually remove the source lines from `~/.config/hypr/hyprland.conf`
+2. Remove the config directory: `rm -rf ~/.config/omarchy-workspace-manager`
+3. If you added the Waybar module, remove the `custom/workspaces` entry from your Waybar config
 
 ## Resources
 - [Hyprland Documentation](https://wiki.hyprland.org/) — Reference for integrating the generated fragments into your config.
