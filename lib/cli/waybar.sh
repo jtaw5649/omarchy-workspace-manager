@@ -11,10 +11,10 @@ owm_waybar_get_state() {
 	# Get workspaces that have windows (occupied)
 	local occupied
 	occupied=$(hyprctl workspaces -j | jq -r --argjson off "$OWM_PAIRED_OFFSET" \
-		'[.[].id | if . > $off then . - $off else . end] | unique | .[]')
+		'[.[] | select(.windows > 0) | .id | if . > $off then . - $off else . end] | unique | .[]')
 
 	local output=""
-	local occupied_list=" $occupied "
+	local occupied_list=" ${occupied//$'\n'/ } "
 
 	for i in 1 2 3 4 5; do
 		local is_active=false is_occupied=false
@@ -23,11 +23,11 @@ owm_waybar_get_state() {
 
 		if $is_active; then
 			if $is_occupied; then
-				# Active + has windows: bright square
-				output+="<span foreground='#ffffff'>■</span> "
+				# Active + has windows: bright rounded square
+				output+="<span foreground='#ffffff'>󱓻</span> "
 			else
-				# Active + no windows: dim square
-				output+="<span foreground='#666666'>■</span> "
+				# Active + no windows: dim rounded square
+				output+="<span foreground='#666666'>󱓻</span> "
 			fi
 		else
 			if $is_occupied; then
@@ -49,10 +49,13 @@ owm_waybar_get_state() {
 	tooltip_json=$(printf 'Active: %s' "$active_normalized" | jq -Rs .)
 
 	printf '{"text":%s,"tooltip":%s,"class":"workspaces","markup":true}\n' \
-		"$text_json" "$tooltip_json"
+		"$text_json" "$tooltip_json" 2>/dev/null || true
 }
 
 owm_cli_waybar() {
+	# Avoid SIGPIPE noise when Waybar or socat closes the pipe
+	trap '' PIPE
+
 	owm_paired_load_config
 
 	case "${1:-}" in
@@ -60,8 +63,8 @@ owm_cli_waybar() {
 			cat <<'USAGE'
 Usage: omarchy-workspace-manager waybar
 
-Outputs JSON for Waybar custom module with pango markup.
-Classes: active, occupied, empty
+Outputs JSON for Waybar custom module with inline pango styling.
+Active workspaces show a square, inactive show numbers.
 USAGE
 			return 0
 			;;

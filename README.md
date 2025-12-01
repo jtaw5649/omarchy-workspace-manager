@@ -116,31 +116,16 @@ Add a custom module to your Waybar config:
 }
 ```
 
-Add styles to your Waybar CSS (`~/.config/waybar/style.css`):
+The module displays workspaces 1-5 with inline pango styling:
 
-```css
-#custom-workspaces {
-    font-family: monospace;
-    padding: 0 10px;
-}
+| State | Display |
+|-------|---------|
+| Active + has windows | bright square (`#ffffff`) |
+| Active + empty | dim square (`#666666`) |
+| Inactive + has windows | mid-bright number (`#aaaaaa`) |
+| Inactive + empty | dim number (`#666666`) |
 
-#custom-workspaces .active {
-    color: #ffffff;
-    background: #6C5CE7;
-    border-radius: 4px;
-    padding: 0 4px;
-}
-
-#custom-workspaces .occupied {
-    color: #ffffff;
-}
-
-#custom-workspaces .empty {
-    color: #666666;
-}
-```
-
-The module displays all 5 workspaces with normalized numbers (e.g., workspace 14 shows as "4"). Active workspace is highlighted, occupied workspaces are bright, empty ones are dimmed. Scroll to cycle between paired workspaces.
+Scroll to cycle between paired workspaces.
 
 ## Uninstall
 
