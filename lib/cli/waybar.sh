@@ -22,13 +22,8 @@ owm_waybar_get_state() {
 		[[ "$occupied_list" == *" $i "* ]] && is_occupied=true
 
 		if $is_active; then
-			if $is_occupied; then
-				# Active + has windows: bright rounded square
-				output+="<span foreground='#ffffff'>󱓻</span> "
-			else
-				# Active + no windows: dim rounded square
-				output+="<span foreground='#666666'>󱓻</span> "
-			fi
+			# Active workspace: always bright rounded square
+			output+="<span foreground='#ffffff'>󱓻</span> "
 		else
 			if $is_occupied; then
 				# Inactive + has windows: mid-bright number
@@ -43,13 +38,12 @@ owm_waybar_get_state() {
 	# Trim trailing space
 	output="${output% }"
 
-	# JSON-safe fields
-	local text_json tooltip_json
+	# JSON-safe text field
+	local text_json
 	text_json=$(printf '%s' "$output" | jq -Rs .)
-	tooltip_json=$(printf 'Active: %s' "$active_normalized" | jq -Rs .)
 
-	printf '{"text":%s,"tooltip":%s,"class":"workspaces","markup":true}\n' \
-		"$text_json" "$tooltip_json" 2>/dev/null || true
+	printf '{"text":%s,"class":"workspaces","markup":true}\n' \
+		"$text_json" 2>/dev/null || true
 }
 
 owm_cli_waybar() {
