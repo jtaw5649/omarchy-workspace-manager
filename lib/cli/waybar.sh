@@ -1,4 +1,3 @@
-```shellscript
 #!/usr/bin/env bash
 
 owm_source "lib/paired.sh"
@@ -81,5 +80,3 @@ USAGE
 		esac
 	done
 }
-
-```
