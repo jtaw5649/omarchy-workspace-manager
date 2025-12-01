@@ -31,8 +31,8 @@ owm_waybar_get_state() {
 			fi
 		else
 			if $is_occupied; then
-				# Inactive + has windows: bright number
-				output+="<span foreground='#ffffff'>$i</span> "
+				# Inactive + has windows: mid-bright number
+				output+="<span foreground='#aaaaaa'>$i</span> "
 			else
 				# Inactive + no windows: dim number
 				output+="<span foreground='#666666'>$i</span> "
