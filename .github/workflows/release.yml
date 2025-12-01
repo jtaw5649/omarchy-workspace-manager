@@ -5,37 +5,30 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  aur-publish:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck shfmt
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Lint
-        run: scripts/lint.sh
+      - name: Update PKGBUILD version
+        run: sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
 
-      - name: Set release version
-        id: meta
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          echo "$version" > version
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Build release artifacts
-        run: scripts/build-release.sh
-
-      - name: Upload release tarball
-        uses: softprops/action-gh-release@v2
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
         with:
-          files: dist/omarchy-workspace-manager-${{ steps.meta.outputs.version }}.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pkgname: omarchy-workspace-manager
+          pkgbuild: ./PKGBUILD
+          assets: |
+            omarchy-workspace-manager.install
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.version.outputs.version }}"
+          updpkgsums: true
+          ssh_keyscan_types: rsa,ecdsa,ed25519

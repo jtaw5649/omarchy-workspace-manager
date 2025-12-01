@@ -1,81 +1,15 @@
 #!/usr/bin/env bash
-# CLI dispatcher for daemon operations.
 
 owm_source "lib/daemon.sh"
 
-owm_cli_daemon_usage() {
-	cat <<'USAGE'
-Usage: omarchy-workspace-manager daemon [OPTIONS]
-
-Options:
-      --primary <NAME>           Override primary monitor identifier
-      --secondary <NAME>         Override secondary monitor identifier
-      --offset <NUMBER>          Override paired workspace offset (default 10)
-  -h, --help                     Show this help message
-USAGE
-}
-
 owm_cli_daemon() {
-	local primary_override=""
-	local secondary_override=""
-	local offset_override=""
-
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		--primary)
-			primary_override="$2"
-			shift 2
-			;;
-		--primary=*)
-			primary_override="${1#*=}"
-			shift
-			;;
-		--secondary)
-			secondary_override="$2"
-			shift 2
-			;;
-		--secondary=*)
-			secondary_override="${1#*=}"
-			shift
-			;;
-		--offset)
-			offset_override="$2"
-			shift 2
-			;;
-		--offset=*)
-			offset_override="${1#*=}"
-			shift
-			;;
-		-h | --help)
-			owm_cli_daemon_usage
-			return 0
-			;;
-		--)
-			shift
-			break
-			;;
-		-*)
-			owm_die "unknown option '$1'"
+	case "${1:-}" in
+		-h|--help|help)
+			echo "Usage: omarchy-workspace-manager daemon"
+			echo "Starts the event loop for monitor changes."
 			;;
 		*)
-			owm_die "unexpected argument '$1'"
+			owm_daemon_run
 			;;
-		esac
-	done
-
-	if [[ $# -gt 0 ]]; then
-		owm_die "unexpected argument '$1'"
-	fi
-
-	if [[ -n "$primary_override" ]]; then
-		export OWM_DAEMON_PRIMARY_OVERRIDE="$primary_override"
-	fi
-	if [[ -n "$secondary_override" ]]; then
-		export OWM_DAEMON_SECONDARY_OVERRIDE="$secondary_override"
-	fi
-	if [[ -n "$offset_override" ]]; then
-		export OWM_DAEMON_OFFSET_OVERRIDE="$offset_override"
-	fi
-
-	owm_daemon_run
+	esac
 }
