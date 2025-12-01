@@ -84,8 +84,28 @@ owm_setup_generate_workspace_rules() {
 	done
 }
 
+owm_setup_migrate_windows() {
+	[[ -f "$OWM_CONFIG_PATH" ]] || return 0
+
+	local offset=$(jq -r '.paired_offset // 10' "$OWM_CONFIG_PATH")
+	local clients=$(hyprctl clients -j 2>/dev/null) || return 0
+
+	# Move windows from secondary workspaces to their paired primary workspace
+	echo "$clients" | jq -r --argjson offset "$offset" '
+		.[] | select(.workspace.id > $offset and .workspace.id <= ($offset * 2)) |
+		"\(.address) \(.workspace.id)"
+	' | while read -r addr ws; do
+		local target=$((ws - offset))
+		hyprctl dispatch movetoworkspacesilent "$target,address:$addr" 2>/dev/null
+	done
+
+	echo "Migrated windows to primary workspaces"
+}
+
 owm_setup_uninstall() {
 	local base_dir="${1:-$HOME/.config/omarchy-workspace-manager}"
+
+	owm_setup_migrate_windows
 
 	# Remove source refs (BEGIN/END blocks) from config files
 	for conf in "$HOME/.config/hypr/bindings.conf" "$HOME/.config/hypr/autostart.conf" "$HOME/.config/hypr/hyprland.conf"; do

@@ -41,4 +41,5 @@ owm_paired_move_window() {
 
 	((active_ws > OWM_PAIRED_OFFSET)) && target_ws=$((normalized + OWM_PAIRED_OFFSET))
 	hyprctl dispatch movetoworkspacesilent "$target_ws"
+	owm_paired_switch "$normalized"
 }

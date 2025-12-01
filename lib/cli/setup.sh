@@ -7,8 +7,9 @@ owm_cli_setup_usage() {
 Usage: omarchy-workspace-manager setup <command>
 
 Commands:
-  install     Generate Hyprland fragments
-  uninstall   Remove generated fragments
+  install          Generate Hyprland fragments
+  uninstall        Remove generated fragments
+  migrate-windows  Move secondary windows to paired primary workspaces
 USAGE
 }
 
@@ -19,6 +20,9 @@ owm_cli_setup() {
 			;;
 		uninstall)
 			owm_setup_uninstall
+			;;
+		migrate-windows)
+			owm_setup_migrate_windows
 			;;
 		-h|--help|help|"")
 			owm_cli_setup_usage

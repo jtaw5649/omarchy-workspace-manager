@@ -1,6 +1,6 @@
 # Maintainer: jtaw5649 <213313463+jtaw5649 at users dot noreply dot github dot com>
 pkgname=omarchy-workspace-manager
-pkgver=1.2.2
+pkgver=1.2.3
 pkgrel=1
 pkgdesc="Paired dual-monitor workspace management for Hyprland"
 arch=('any')
