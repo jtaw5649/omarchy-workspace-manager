@@ -23,7 +23,7 @@ owm_waybar_get_state() {
 		elif [[ "$occupied_list" == *" $i "* ]]; then
 			class="occupied"
 		fi
-		output+="<span class=\"$class\">$i</span> "
+		output+="<span class='$class'>$i</span> "
 	done
 
 	# Trim trailing space
