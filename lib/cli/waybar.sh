@@ -3,12 +3,34 @@
 owm_source "lib/paired.sh"
 
 owm_waybar_get_state() {
-	local active_ws=$(hyprctl activeworkspace -j | jq -r '.id')
-	local normalized=$(owm_paired_normalize "$active_ws")
-	local workspaces=$(hyprctl workspaces -j | jq -r --argjson off "$OWM_PAIRED_OFFSET" \
-		'[.[].id | if . > $off then . - $off else . end] | unique | sort | map(tostring) | join(" ")')
-	printf '{"text":"%s","tooltip":"Workspaces: %s","class":"ws-%s","alt":"%s"}\n' \
-		"$normalized" "$workspaces" "$normalized" "$workspaces"
+	local active_ws
+	active_ws=$(hyprctl activeworkspace -j | jq -r '.id')
+	local active_normalized
+	active_normalized=$(owm_paired_normalize "$active_ws")
+
+	# Get workspaces that have windows (occupied)
+	local occupied
+	occupied=$(hyprctl workspaces -j | jq -r --argjson off "$OWM_PAIRED_OFFSET" \
+		'[.[].id | if . > $off then . - $off else . end] | unique | .[]')
+
+	local output=""
+	local occupied_list=" $occupied "
+
+	for i in 1 2 3 4 5; do
+		local class="empty"
+		if [[ "$i" -eq "$active_normalized" ]]; then
+			class="active"
+		elif [[ "$occupied_list" == *" $i "* ]]; then
+			class="occupied"
+		fi
+		output+="<span class=\"$class\">$i</span> "
+	done
+
+	# Trim trailing space
+	output="${output% }"
+
+	printf '{"text":"%s","tooltip":"Active: %s","class":"workspaces"}\n' \
+		"$output" "$active_normalized"
 }
 
 owm_cli_waybar() {
@@ -19,7 +41,8 @@ owm_cli_waybar() {
 			cat <<'USAGE'
 Usage: omarchy-workspace-manager waybar
 
-Outputs JSON for Waybar custom module.
+Outputs JSON for Waybar custom module with pango markup.
+Classes: active, occupied, empty
 USAGE
 			return 0
 			;;
@@ -32,7 +55,7 @@ USAGE
 
 	socat -U - "UNIX-CONNECT:$socket" | while IFS= read -r line; do
 		case "$line" in
-			workspace*|focusedmon*|createworkspace*|destroyworkspace*)
+			workspace*|focusedmon*|createworkspace*|destroyworkspace*|openwindow*|closewindow*|movewindow*)
 				owm_waybar_get_state
 				;;
 		esac

@@ -110,12 +110,37 @@ Add a custom module to your Waybar config:
 "custom/workspaces": {
     "exec": "omarchy-workspace-manager waybar",
     "return-type": "json",
+    "format": "{}",
     "on-scroll-up": "omarchy-workspace-manager paired cycle prev",
     "on-scroll-down": "omarchy-workspace-manager paired cycle next"
 }
 ```
 
-The module displays the normalized workspace number (e.g., workspace 14 shows as "4") and updates on workspace changes. Scroll up cycles to the previous paired workspace, scroll down to the next.
+Add styles to your Waybar CSS (`~/.config/waybar/style.css`):
+
+```css
+#custom-workspaces {
+    font-family: monospace;
+    padding: 0 10px;
+}
+
+#custom-workspaces .active {
+    color: #ffffff;
+    background: #6C5CE7;
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
+#custom-workspaces .occupied {
+    color: #ffffff;
+}
+
+#custom-workspaces .empty {
+    color: #666666;
+}
+```
+
+The module displays all 5 workspaces with normalized numbers (e.g., workspace 14 shows as "4"). Active workspace is highlighted, occupied workspaces are bright, empty ones are dimmed. Scroll to cycle between paired workspaces.
 
 ## Uninstall
 
