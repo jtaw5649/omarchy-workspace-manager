@@ -1,78 +1,51 @@
 #!/usr/bin/env bash
-# Omarchy Workspace Manager entrypoint.
-
 set -euo pipefail
-IFS=$'\n\t'
 
-root_dir="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-core_lib="$root_dir/lib/core.sh"
-if [[ ! -f "$core_lib" ]]; then
-	echo "error: missing core library at $core_lib" >&2
-	exit 1
-fi
-# shellcheck source=/dev/null
-source "$core_lib"
+root_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root_dir/lib/core.sh"
+
+owm_ensure_setup() {
+	local config_dir="$HOME/.config/omarchy-workspace-manager"
+	[[ -f "$config_dir/bindings.conf" ]] && return 0
+
+	echo "First run detected, running setup..."
+	owm_source "lib/cli/setup.sh"
+	owm_cli_setup install
+}
 
 owm_usage() {
 	cat <<'USAGE'
-Usage: omarchy-workspace-manager <command> [options]
+Usage: omarchy-workspace-manager <command> [args]
 
 Commands:
-  paired        Paired workspace operations
-  daemon        Event loop supervisor for Hyprland
-  dispatch      Force workspace assignments immediately
-  setup         Installer utilities for Hyprland integration
-  uninstall     Remove Omarchy Workspace Manager files
-  checkpoints   Inspect configuration checkpoints
-  help          Show this help message
+  paired    Paired workspace operations (switch, cycle, move-window)
+  daemon    Event loop for monitor changes
+  setup     Generate/remove Hyprland fragments
+  waybar    Waybar custom module output
+  help      Show this help
 USAGE
 }
 
-main() {
-	if [[ $# -eq 0 ]]; then
-		owm_usage
-		exit 1
-	fi
-
-	local command="$1"
-	shift || true
-
-	if [[ "$command" != "help" && "$command" != "-h" && "$command" != "--help" && "$command" != "uninstall" ]]; then
-		owm_validate_runtime
-	fi
-
-	case "$command" in
-	help | -h | --help)
-		owm_usage
-		;;
+case "${1:-}" in
 	paired)
-		owm_source "lib/cli/paired.sh"
-		owm_cli_paired "$@"
+		owm_ensure_setup
+		shift; owm_source "lib/cli/paired.sh"; owm_cli_paired "$@"
 		;;
 	daemon)
-		owm_source "lib/cli/daemon.sh"
-		owm_cli_daemon "$@"
-		;;
-	dispatch)
-		owm_source "lib/cli/dispatch.sh"
-		owm_cli_dispatch "$@"
+		owm_ensure_setup
+		shift; owm_source "lib/cli/daemon.sh"; owm_cli_daemon "$@"
 		;;
 	setup)
-		owm_source "lib/cli/setup.sh"
-		owm_cli_setup "$@"
+		shift; owm_source "lib/cli/setup.sh"; owm_cli_setup "$@"
 		;;
-	uninstall)
-		owm_source "lib/cli/uninstall.sh"
-		owm_cli_uninstall "$@"
+	waybar)
+		owm_ensure_setup
+		shift; owm_source "lib/cli/waybar.sh"; owm_cli_waybar "$@"
 		;;
-	checkpoints)
-		owm_source "lib/cli/checkpoints.sh"
-		owm_cli_checkpoints "$@"
+	-h|--help|help|"")
+		owm_usage
 		;;
 	*)
-		owm_die "unknown command '$command'"
+		owm_die "unknown command: $1"
 		;;
-	esac
-}
-
-main "$@"
+esac
