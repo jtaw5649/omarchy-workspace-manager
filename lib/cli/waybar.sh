@@ -1,3 +1,4 @@
+```shellscript
 #!/usr/bin/env bash
 
 owm_source "lib/paired.sh"
@@ -17,20 +18,39 @@ owm_waybar_get_state() {
 	local occupied_list=" $occupied "
 
 	for i in 1 2 3 4 5; do
-		local class="empty"
-		if [[ "$i" -eq "$active_normalized" ]]; then
-			class="active"
-		elif [[ "$occupied_list" == *" $i "* ]]; then
-			class="occupied"
+		local is_active=false is_occupied=false
+		[[ "$i" -eq "$active_normalized" ]] && is_active=true
+		[[ "$occupied_list" == *" $i "* ]] && is_occupied=true
+
+		if $is_active; then
+			if $is_occupied; then
+				# Active + has windows: bright square
+				output+="<span foreground='#ffffff'>■</span> "
+			else
+				# Active + no windows: dim square
+				output+="<span foreground='#666666'>■</span> "
+			fi
+		else
+			if $is_occupied; then
+				# Inactive + has windows: bright number
+				output+="<span foreground='#ffffff'>$i</span> "
+			else
+				# Inactive + no windows: dim number
+				output+="<span foreground='#666666'>$i</span> "
+			fi
 		fi
-		output+="<span class='$class'>$i</span> "
 	done
 
 	# Trim trailing space
 	output="${output% }"
 
-	printf '{"text":"%s","tooltip":"Active: %s","class":"workspaces"}\n' \
-		"$output" "$active_normalized"
+	# JSON-safe fields
+	local text_json tooltip_json
+	text_json=$(printf '%s' "$output" | jq -Rs .)
+	tooltip_json=$(printf 'Active: %s' "$active_normalized" | jq -Rs .)
+
+	printf '{"text":%s,"tooltip":%s,"class":"workspaces","markup":true}\n' \
+		"$text_json" "$tooltip_json"
 }
 
 owm_cli_waybar() {
@@ -61,3 +81,5 @@ USAGE
 		esac
 	done
 }
+
+```
