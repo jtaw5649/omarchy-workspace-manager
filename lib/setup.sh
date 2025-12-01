@@ -79,6 +79,12 @@ owm_setup_uninstall() {
 		done
 	fi
 
+	# Clean up source refs from personal config files (legacy installs)
+	for conf in bindings autostart; do
+		local file="$HOME/.config/hypr/$conf.conf"
+		[[ -f "$file" ]] && sed -i '/BEGIN OMARCHY_WORKSPACE_MANAGER/,/END OMARCHY_WORKSPACE_MANAGER/d' "$file" 2>/dev/null || true
+	done
+
 	rm -f "$base_dir/bindings.conf" "$base_dir/autostart.conf" "$base_dir/workspace-rules.conf"
 	rmdir "$base_dir" 2>/dev/null || true
 	echo "Removed omarchy-workspace-manager config"
