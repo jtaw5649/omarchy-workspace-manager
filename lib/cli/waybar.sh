@@ -2,6 +2,21 @@
 
 owm_source "lib/paired.sh"
 
+declare -g OWM_COLOR_BRIGHT OWM_COLOR_MID OWM_COLOR_DIM
+
+owm_waybar_dim_color() {
+	local hex="$1" factor="$2"
+	local r=$((16#${hex:1:2})) g=$((16#${hex:3:2})) b=$((16#${hex:5:2}))
+	printf '#%02x%02x%02x' $((r * factor / 100)) $((g * factor / 100)) $((b * factor / 100))
+}
+
+owm_waybar_load_theme_colors() {
+	local fg=$(grep -oP '@define-color foreground \K#[0-9a-fA-F]{6}' "$HOME/.config/omarchy/current/theme/waybar.css")
+	OWM_COLOR_BRIGHT="$fg"
+	OWM_COLOR_MID=$(owm_waybar_dim_color "$fg" 65)
+	OWM_COLOR_DIM=$(owm_waybar_dim_color "$fg" 40)
+}
+
 owm_waybar_get_state() {
 	local active_ws
 	active_ws=$(hyprctl activeworkspace -j | jq -r '.id')
@@ -22,16 +37,11 @@ owm_waybar_get_state() {
 		[[ "$occupied_list" == *" $i "* ]] && is_occupied=true
 
 		if $is_active; then
-			# Active workspace: always bright rounded square
-			output+="<span foreground='#ffffff'>󱓻</span> "
+			output+="<span foreground='$OWM_COLOR_BRIGHT'>󱓻</span> "
+		elif $is_occupied; then
+			output+="<span foreground='$OWM_COLOR_MID'>$i</span> "
 		else
-			if $is_occupied; then
-				# Inactive + has windows: mid-bright number
-				output+="<span foreground='#aaaaaa'>$i</span> "
-			else
-				# Inactive + no windows: dim number
-				output+="<span foreground='#666666'>$i</span> "
-			fi
+			output+="<span foreground='$OWM_COLOR_DIM'>$i</span> "
 		fi
 	done
 
@@ -51,6 +61,7 @@ owm_cli_waybar() {
 	trap '' PIPE
 
 	owm_paired_load_config
+	owm_waybar_load_theme_colors
 
 	case "${1:-}" in
 		-h|--help|help)

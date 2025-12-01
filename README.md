@@ -2,7 +2,7 @@
   <h1>Omarchy Workspace Manager</h1>
   <p>Hyprland's companion for perfectly paired dual-monitor workspaces.</p>
   <p>
-    <a href="./PKGBUILD"><img src="https://img.shields.io/badge/version-1.2.3-6C5CE7?style=flat-square" alt="Version 1.2.3"></a>
+    <a href="./PKGBUILD"><img src="https://img.shields.io/badge/version-1.2.4-6C5CE7?style=flat-square" alt="Version 1.2.4"></a>
     <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/built_for-Omarchy_%2B_Hyprland-00B894?style=flat-square" alt="Omarchy + Hyprland Ready"></a>
     <a href="https://aur.archlinux.org/packages/omarchy-workspace-manager"><img src="https://img.shields.io/badge/install-AUR-0984E3?style=flat-square" alt="AUR Package"></a>
   </p>
