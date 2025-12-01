@@ -24,6 +24,21 @@ owm_setup_ensure_config() {
 	echo "Created default config at $OWM_CONFIG_PATH - edit monitor names"
 }
 
+owm_setup_add_source_line() {
+	local target_file="$1"
+	local source_line="$2"
+
+	[[ -f "$target_file" ]] || return 1
+	grep -qF "$source_line" "$target_file" 2>/dev/null && return 0
+
+	cat >> "$target_file" <<EOF
+
+# BEGIN OMARCHY_WORKSPACE_MANAGER
+$source_line
+# END OMARCHY_WORKSPACE_MANAGER
+EOF
+}
+
 owm_setup_install() {
 	local base_dir="${1:-$HOME/.config/omarchy-workspace-manager}"
 	local bin_path="${2:-omarchy-workspace-manager}"
@@ -35,13 +50,13 @@ owm_setup_install() {
 	sed "s|__OWM_BIN__|$bin_path|g" "$OWM_ROOT/config/hypr-autostart.conf" > "$base_dir/autostart.conf"
 	owm_setup_generate_workspace_rules > "$base_dir/workspace-rules.conf"
 
+	# Add source lines to personal config files (Omarchy style)
+	owm_setup_add_source_line "$HOME/.config/hypr/bindings.conf" "source = $base_dir/bindings.conf"
+	owm_setup_add_source_line "$HOME/.config/hypr/autostart.conf" "source = $base_dir/autostart.conf"
+
+	# Add workspace rules to hyprland.conf
 	local hypr_conf="$HOME/.config/hypr/hyprland.conf"
-	if [[ -f "$hypr_conf" ]]; then
-		for f in bindings autostart workspace-rules; do
-			local line="source = $base_dir/$f.conf"
-			grep -qF "$line" "$hypr_conf" 2>/dev/null || echo "$line" >> "$hypr_conf"
-		done
-	fi
+	owm_setup_add_source_line "$hypr_conf" "source = $base_dir/workspace-rules.conf"
 
 	echo "Configured omarchy-workspace-manager"
 	hyprctl reload 2>/dev/null || true
@@ -72,17 +87,10 @@ owm_setup_generate_workspace_rules() {
 owm_setup_uninstall() {
 	local base_dir="${1:-$HOME/.config/omarchy-workspace-manager}"
 
-	local hypr_conf="$HOME/.config/hypr/hyprland.conf"
-	if [[ -f "$hypr_conf" ]]; then
-		for f in bindings autostart workspace-rules; do
-			sed -i "\|source = $base_dir/$f.conf|d" "$hypr_conf" 2>/dev/null || true
-		done
-	fi
-
-	# Clean up source refs from personal config files (legacy installs)
-	for conf in bindings autostart; do
-		local file="$HOME/.config/hypr/$conf.conf"
-		[[ -f "$file" ]] && sed -i '/BEGIN OMARCHY_WORKSPACE_MANAGER/,/END OMARCHY_WORKSPACE_MANAGER/d' "$file" 2>/dev/null || true
+	# Remove source refs (BEGIN/END blocks) from config files
+	for conf in "$HOME/.config/hypr/bindings.conf" "$HOME/.config/hypr/autostart.conf" "$HOME/.config/hypr/hyprland.conf"; do
+		[[ -f "$conf" ]] || continue
+		sed -i '/BEGIN OMARCHY_WORKSPACE_MANAGER/,/END OMARCHY_WORKSPACE_MANAGER/d' "$conf" 2>/dev/null || true
 	done
 
 	rm -f "$base_dir/bindings.conf" "$base_dir/autostart.conf" "$base_dir/workspace-rules.conf"

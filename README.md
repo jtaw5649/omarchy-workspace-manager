@@ -2,7 +2,7 @@
   <h1>Omarchy Workspace Manager</h1>
   <p>Hyprland's companion for perfectly paired dual-monitor workspaces.</p>
   <p>
-    <a href="./PKGBUILD"><img src="https://img.shields.io/badge/version-1.2.1-6C5CE7?style=flat-square" alt="Version 1.2.1"></a>
+    <a href="./PKGBUILD"><img src="https://img.shields.io/badge/version-1.2.2-6C5CE7?style=flat-square" alt="Version 1.2.2"></a>
     <a href="https://omarchy.org/"><img src="https://img.shields.io/badge/built_for-Omarchy_%2B_Hyprland-00B894?style=flat-square" alt="Omarchy + Hyprland Ready"></a>
     <a href="https://aur.archlinux.org/packages/omarchy-workspace-manager"><img src="https://img.shields.io/badge/install-AUR-0984E3?style=flat-square" alt="AUR Package"></a>
   </p>
@@ -133,11 +133,11 @@ Scroll to cycle between paired workspaces.
 yay -R omarchy-workspace-manager
 ```
 
-**Clean up config files:**
+Config cleanup is automatic—the package runs `setup uninstall` on removal, which removes source refs from your Hyprland configs.
 
-1. Run `omarchy-workspace-manager setup uninstall` before removing the package (removes source lines from `hyprland.conf` and deletes generated fragments), or manually remove the source lines from `~/.config/hypr/hyprland.conf`
-2. Remove the config directory: `rm -rf ~/.config/omarchy-workspace-manager`
-3. If you added the Waybar module, remove the `custom/workspaces` entry from your Waybar config
+**Optional manual cleanup:**
+- Remove user config: `rm -rf ~/.config/omarchy-workspace-manager`
+- If you added the Waybar module, remove the `custom/workspaces` entry from your Waybar config
 
 ## Resources
 - [Hyprland Documentation](https://wiki.hyprland.org/) — Reference for integrating the generated fragments into your config.
