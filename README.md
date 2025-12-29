@@ -10,6 +10,10 @@
 
 ---
 
+> [!IMPORTANT]
+> This repository is deprecated. The project has moved to
+> [hyprspaces](https://github.com/jtaw5649/hyprspaces).
+
 ## Table of Contents
 - [At a Glance](#at-a-glance)
 - [Installation](#installation)
